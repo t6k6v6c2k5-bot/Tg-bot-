@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc766"/><stop offset="1" stop-color="#f4701b"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4b5563"/><stop offset="1" stop-color="#2b323d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- спортивка -->
+  <path d="M40 512 Q60 395 256 385 Q452 395 472 512 Z" fill="#1d3a8f"/>
+  <path d="M120 512 Q130 440 175 410 L190 420 Q150 450 150 512 Z" fill="#fff" opacity=".9"/>
+  <path d="M392 512 Q382 440 337 410 L322 420 Q362 450 362 512 Z" fill="#fff" opacity=".9"/>
+  <path d="M200 388 L256 450 L312 388 Q256 372 200 388 Z" fill="#14296b"/>
+  <!-- шея -->
+  <rect x="222" y="335" width="68" height="62" rx="20" fill="#e3ab82"/>
+  <!-- уши -->
+  <circle cx="148" cy="262" r="24" fill="#eebb92"/><circle cx="364" cy="262" r="24" fill="#eebb92"/>
+  <!-- лицо -->
+  <ellipse cx="256" cy="255" rx="112" ry="128" fill="#f5c9a2"/>
+  <!-- кепка -->
+  <path d="M138 218 Q136 108 256 104 Q376 108 374 218 Z" fill="url(#cap)"/>
+  <circle cx="256" cy="104" r="9" fill="#2b323d"/>
+  <path d="M108 222 Q256 184 404 222 L404 238 Q256 214 108 238 Z" fill="#20262f"/>
+  <!-- брови -->
+  <path d="M184 252 Q208 236 236 250" stroke="#3b2a20" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <path d="M276 244 Q306 224 332 246" stroke="#3b2a20" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <!-- глаза -->
+  <ellipse cx="212" cy="276" rx="17" ry="13" fill="#fff"/><ellipse cx="300" cy="276" rx="17" ry="13" fill="#fff"/>
+  <circle cx="218" cy="277" r="7" fill="#2a1d16"/><circle cx="306" cy="277" r="7" fill="#2a1d16"/>
+  <!-- нос -->
+  <ellipse cx="256" cy="304" rx="20" ry="15" fill="#e3a47b"/>
+  <!-- усы -->
+  <path d="M162 330 Q208 292 256 322 Q304 292 350 330 Q326 362 256 340 Q186 362 162 330 Z" fill="#4a3224"/>
+  <!-- ухмылка -->
+  <path d="M222 364 Q266 388 304 356" stroke="#8a4b3a" stroke-width="7" stroke-linecap="round" fill="none"/>
+</svg>
