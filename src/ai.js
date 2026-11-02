@@ -132,12 +132,38 @@ const providers = {
   },
 };
 
+// Универсальный OpenAI-совместимый провайдер (Mistral, Cerebras, OpenRouter, GitHub Models и т. п.)
+function compat(cfg) {
+  return {
+    enabled: () => cfg.keys.length > 0,
+    variants: (_tier, offset) => cfg.models.flatMap((model) => cfg.keys.map((_, i) => ({ model, apiKey: cfg.keys[(offset + i) % cfg.keys.length] }))),
+    async call({ system, prompt, maxTokens, temperature, model, apiKey }) {
+      const data = await post(
+        `${cfg.baseUrl}/chat/completions`,
+        { authorization: `Bearer ${apiKey}`, 'x-title': 'tg-chat-buddy' },
+        {
+          model,
+          max_tokens: maxTokens,
+          temperature,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: prompt },
+          ],
+        },
+      );
+      return (data.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '');
+    },
+  };
+}
+for (const cfg of config.extraProviders) providers[cfg.name] = compat(cfg);
+const extraNames = () => config.extraProviders.map((c) => c.name);
+
 function rateOk(high) {
   const now = Date.now();
   while (calls.length && now - calls[0] > 60_000) calls.shift();
   // часть лимита зарезервирована под прямые обращения к боту
   // у каждого ключа Gemini своя квота, поэтому общий лимит растёт с их числом
-  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length + config.groqKeys.length);
+  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length + config.groqKeys.length + config.extraProviders.reduce((n, c) => n + c.keys.length, 0));
   const limit = high ? rpm : Math.max(1, Math.floor(rpm * 0.6));
   return calls.length < limit;
 }
@@ -152,7 +178,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
-  const names = (prefer === 'edgy' ? ['grok', 'groq', 'gemini'] : ['gemini', 'groq', 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
+  const names = (prefer === 'edgy' ? ['grok', 'groq', ...extraNames(), 'gemini'] : ['gemini', 'groq', ...extraNames(), 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
   const offset = rr++;
   const seen = new Set();
   const candidates = names
@@ -200,6 +226,7 @@ export function aiStatus(now = Date.now()) {
   return {
     gemini: { keys: config.geminiKeys.length, models: [...new Set([...config.geminiSmartModels, ...config.geminiModels])] },
     groq: { keys: config.groqKeys.length, models: config.groqModels },
+    extra: config.extraProviders.map((c) => ({ name: c.name, keys: c.keys.length, models: c.models })),
     grok: { enabled: Boolean(config.grokKey) },
     callsLastMinute: calls.length,
     pauses,

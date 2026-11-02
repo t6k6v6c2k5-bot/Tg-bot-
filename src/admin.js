@@ -153,6 +153,7 @@ export function aiText(s) {
     `Gemini: ключей ${s.gemini.keys}, модели: ${s.gemini.models.join(', ')}`,
     `Groq: ключей ${s.groq.keys}${s.groq.keys ? `, модели: ${s.groq.models.join(', ')}` : ''}`,
     `Grok (xAI): ${s.grok.enabled ? 'есть' : 'нет'}`,
+    ...(s.extra || []).map((e) => `${e.name}: ключей ${e.keys}, модели: ${e.models.join(', ')}`),
     `Запросов за минуту: ${s.callsLastMinute}`,
   ];
   if (s.pauses.length) {
