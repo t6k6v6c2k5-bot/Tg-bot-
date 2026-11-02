@@ -22,6 +22,10 @@ export async function refreshRoster(chatId, st) {
     console.log(`[roster] chat=${chatId} админов ${admins.length}, всего в чате ${st.memberCount}`);
   } catch (e) {
     console.warn('[roster]', e.message);
+    if (/\b403\b|chat not found|bot was kicked/i.test(e.message)) {
+      st.kickedAt = Date.now();
+      save();
+    }
   }
 }
 

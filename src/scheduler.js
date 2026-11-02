@@ -44,7 +44,10 @@ async function tick() {
       }
     } catch (e) {
       console.error('[scheduler]', chatId, e.message);
-      if (/\b403\b|chat not found|bot was kicked|bot was blocked/i.test(e.message)) st.kickedAt = Date.now();
+      if (/\b403\b|chat not found|bot was kicked|bot was blocked/i.test(e.message)) {
+        st.kickedAt = Date.now();
+        save(); // переживёт перезапуск
+      }
     }
   }
 }
