@@ -52,6 +52,30 @@ async function download(fileId, maxBytes) {
 
 const clean = (t, n) => t.replace(/\s+/g, ' ').replace(/^["«“]+|["»”]+$/g, '').trim().slice(0, n);
 
+// Расшифровка через Whisper на Groq: быстро и не тратит квоту Gemini
+async function whisper(b64, filename, mime) {
+  for (const key of config.groqKeys) {
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([Buffer.from(b64, 'base64')], { type: mime }), filename);
+      form.append('model', config.groqWhisperModel);
+      form.append('response_format', 'json');
+      form.append('temperature', '0');
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${key}` },
+        body: form,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 100)}`);
+      return ((await res.json()).text || '').trim();
+    } catch (e) {
+      console.warn(`[whisper] ключ …${key.slice(-4)}: ${e.message}`);
+    }
+  }
+  return null;
+}
+
 // → текст расшифровки или null
 export async function transcribe(m) {
   const f = m.voice || m.audio || m.video_note;
@@ -59,6 +83,11 @@ export async function transcribe(m) {
   const data = await download(f.file_id, MAX_SPEECH_BYTES);
   if (!data) return null;
   const mime = m.voice ? 'audio/ogg' : m.video_note ? 'video/mp4' : f.mime_type || 'audio/mpeg';
+  if (config.groqKeys.length) {
+    const ext = m.voice ? 'ogg' : m.video_note ? 'mp4' : (f.file_name || '').split('.').pop() || 'mp3';
+    const t = await whisper(data, `audio.${ext}`, mime);
+    if (t != null) return t ? clean(t, 600) : null; // Groq ответил: пусто = речи нет
+  }
   const res = await generate({
     system: 'Ты точный транскрибатор. Отвечай только текстом расшифровки, без пояснений.',
     prompt: 'Расшифруй речь из этого сообщения дословно, на языке оригинала. Если речи нет или она неразборчива — верни пустой ответ.',

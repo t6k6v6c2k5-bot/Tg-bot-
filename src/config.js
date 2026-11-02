@@ -9,6 +9,8 @@ const geminiKeys = [
       .filter(Boolean),
   ),
 ];
+const keyList = (...vals) => [...new Set(vals.filter(Boolean).flatMap((v) => v.split(/[\s,;]+/)).filter(Boolean))];
+const groqKeys = keyList(env.GROQ_API_KEY, env.GROQ_API_KEYS, ...Array.from({ length: 8 }, (_, i) => env[`GROQ_API_KEY_${i + 2}`]));
 const num = (k, d) => (env[k] !== undefined && env[k] !== '' ? Number(env[k]) : d);
 
 export const config = {
@@ -20,6 +22,10 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   grokKey: env.GROK_API_KEY,
+  // Groq (не путать с Grok от xAI): быстрый запасной мозг и Whisper для голосовых
+  groqKeys,
+  groqModels: keyList(env.GROQ_MODEL || 'llama-3.3-70b-versatile,llama-3.1-8b-instant'),
+  groqWhisperModel: env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo',
   grokModel: env.GROK_MODEL || 'grok-4-fast',
   // «умный» уровень для прямых вопросов, дальше запасные из geminiModels
   geminiSmartModels: (env.GEMINI_SMART_MODEL || 'gemini-3.5-flash')

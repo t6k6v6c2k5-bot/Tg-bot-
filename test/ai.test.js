@@ -6,6 +6,9 @@ process.env.GEMINI_API_KEY_2 = 'key-BBBB';
 process.env.GEMINI_API_KEYS = 'key-CCCC, key-AAAA'; // дубль должен схлопнуться
 process.env.GEMINI_MODEL = 'bad-model,good-model';
 delete process.env.GROK_API_KEY;
+process.env.GROQ_API_KEY = 'gsk_test_1111';
+process.env.GROQ_API_KEY_2 = 'gsk_test_2222';
+process.env.GROQ_MODEL = 'groq-model';
 const { config } = await import('../src/config.js');
 const { generate } = await import('../src/ai.js');
 
@@ -72,4 +75,28 @@ test('таймаут/503 — проблема модели: остальные �
   const again = hits.length;
   await generate({ system: 's', prompt: 'p', high: true });
   assert.equal(hits.slice(again).filter((h) => h.startsWith('bad-model')).length, 0); // на паузе у всех ключей
+});
+
+test('Gemini недоступен целиком — отвечает Groq (с запросом в формате OpenAI)', async () => {
+  const seen = [];
+  globalThis.fetch = async (url, opts) => {
+    seen.push(url);
+    if (url.includes('groq.com')) {
+      const body = JSON.parse(opts.body);
+      assert.equal(body.model, 'groq-model');
+      assert.equal(body.messages[0].role, 'system');
+      assert.match(opts.headers.authorization, /^Bearer gsk_test_/);
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ответ от groq' } }] }));
+    }
+    return new Response('down', { status: 503 });
+  };
+  // паузы от прошлых тестов могли уже закрыть Gemini — тогда ответ от Groq придёт сразу
+  const r = await generate({ system: 's', prompt: 'p', high: true });
+  assert.ok(r, 'ответ должен прийти');
+  assert.match(r.provider, /^groq:groq-model:…\d{4}$/);
+  assert.equal(r.text, 'ответ от groq');
+});
+
+test('ключи Groq читаются из нескольких переменных', () => {
+  assert.deepEqual(config.groqKeys.sort(), ['gsk_test_1111', 'gsk_test_2222']);
 });

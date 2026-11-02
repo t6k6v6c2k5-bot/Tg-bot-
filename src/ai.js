@@ -83,6 +83,30 @@ const providers = {
       return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
     },
   },
+  groq: {
+    enabled: () => config.groqKeys.length > 0,
+    variants: (_tier, offset) => {
+      const keys = config.groqKeys;
+      return config.groqModels.flatMap((model) => keys.map((_, i) => ({ model, apiKey: keys[(offset + i) % keys.length] })));
+    },
+    async call({ system, prompt, maxTokens, temperature, model, json, apiKey }) {
+      const data = await post(
+        'https://api.groq.com/openai/v1/chat/completions',
+        { authorization: `Bearer ${apiKey}` },
+        {
+          model,
+          max_tokens: maxTokens,
+          temperature,
+          ...(json ? { response_format: { type: 'json_object' } } : {}),
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: prompt },
+          ],
+        },
+      );
+      return data.choices?.[0]?.message?.content ?? '';
+    },
+  },
   grok: {
     enabled: () => Boolean(config.grokKey),
     variants: () => [{ model: config.grokModel, apiKey: config.grokKey }],
@@ -110,7 +134,7 @@ function rateOk(high) {
   while (calls.length && now - calls[0] > 60_000) calls.shift();
   // часть лимита зарезервирована под прямые обращения к боту
   // у каждого ключа Gemini своя квота, поэтому общий лимит растёт с их числом
-  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length);
+  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length + config.groqKeys.length);
   const limit = high ? rpm : Math.max(1, Math.floor(rpm * 0.6));
   return calls.length < limit;
 }
@@ -125,7 +149,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
-  const names = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
+  const names = (prefer === 'edgy' ? ['grok', 'groq', 'gemini'] : ['gemini', 'groq', 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
   const offset = rr++;
   const seen = new Set();
   const candidates = names
