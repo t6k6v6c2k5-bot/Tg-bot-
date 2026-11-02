@@ -16,7 +16,8 @@ export async function refreshRoster(chatId, st) {
   try {
     const admins = await app.telegram.getChatAdministrators(chatId);
     for (const a of admins) touchUser(st, a.user, { isAdmin: true, left: false });
-    st.memberCount = await app.telegram.getChatMemberCount(chatId);
+    // в Telegraf 4 метод называется getChatMembersCount; callApi работает при любом названии
+    st.memberCount = await app.telegram.callApi('getChatMemberCount', { chat_id: chatId });
     save();
     console.log(`[roster] chat=${chatId} админов ${admins.length}, всего в чате ${st.memberCount}`);
   } catch (e) {

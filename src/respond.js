@@ -7,7 +7,7 @@ import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji, exchangeLength } from './variety.js';
 import { bestOf } from './wit.js';
-import { wantsSerious } from './filter.js';
+import { wantsSerious, isAbuse } from './filter.js';
 import { logSay } from './log.js';
 import { transcript } from './prompts.js';
 import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
@@ -61,8 +61,17 @@ export async function react(chatId, messageId, emoji) {
 // Ступень 2: идём в ИИ, он может ответить SKIP
 export async function respond(chatId, st, { mode, replyTo }) {
   if (busy.has(chatId)) {
-    console.log(`[${mode}] чат занят, пропуск`);
-    return false;
+    // самовольные реплики при занятом чате отбрасываем, а к прямым обращениям встаём в очередь (до 25 с)
+    if (mode !== 'direct' && mode !== 'critic') {
+      console.log(`[${mode}] чат занят, пропуск`);
+      return false;
+    }
+    const t0 = Date.now();
+    while (busy.has(chatId) && Date.now() - t0 < 25_000) await new Promise((r) => setTimeout(r, 250));
+    if (busy.has(chatId)) {
+      console.log(`[${mode}] чат занят дольше 25 с, пропуск`);
+      return false;
+    }
   }
   busy.add(chatId);
   try {
@@ -71,6 +80,8 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const lastText = st.history[st.history.length - 1]?.text || '';
     // «без подколов / по делу» — отвечаем серьёзно и по существу, без шуточного отбора вариантов
     const serious = direct && wantsSerious(lastText);
+    // тролль ругается на бота: отвечаем, только если вышло остро; слабое лучше промолчать
+    const abusive = direct && !serious && isAbuse(lastText);
     const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';
     // Затянувшийся обмен с одним человеком: сначала ставим точку одной фразой, потом просто не продолжаем
     const chain = direct ? exchangeLength(st) : 0;
@@ -91,7 +102,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
             system: system(st, app.name, { long: direct, angle, banned }),
             prompt,
             context: transcript(st.history, 8),
-            direct,
+            direct: direct && !abusive,
             reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0,
             tier: direct ? 'smart' : 'fast',
             high: direct,
@@ -148,7 +159,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
       await say(chatId, st, r.text || pickLine(DECLINES), replyTo);
       return true;
     }
-    if (r.type === 'skip' && direct) {
+    if (r.type === 'skip' && direct && !abusive) {
       // Человек обратился напрямую: молчать нельзя, и «не придумал» — не отказ.
       // Пробуем ещё раз попроще (один вариант, без отбора шуток), потом честно говорим, что мысль не идёт.
       console.log(`[${mode}] SKIP на прямое обращение (${res.provider}) — пробую попроще`);

@@ -62,7 +62,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   const closer = mode && (mode === 'direct' || mode === 'critic') && !botAsked ? closerKind(detect) : null;
   if (closer) {
     console.log(`[closer] «${detect.slice(0, 30)}» (${closer}) — разговор окончен, молчу`);
-    const emoji = { thanks: '🤝', laugh: '😁', emoji: '👍', ack: '👌' }[closer];
+    const emoji = { thanks: '🤝', laugh: '😁', emoji: '👍', ack: '👌', praise: '😎' }[closer];
     if (Math.random() < 0.35 && Date.now() - (st.lastReactAt || 0) > 60_000 && (await react(chatId, msg.message_id, emoji))) {
       st.lastReactAt = Date.now();
       save();
