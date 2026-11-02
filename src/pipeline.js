@@ -30,8 +30,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   noteHour(st, hourOf(now));
   // Учёба без ИИ: реакция чата на реплики бота и факты по простым правилам — всегда, даже если модели недоступны
   if (!isPrivate) {
-    const fb = recordFeedback(st, { text, reply_to_message: msg.reply_to_message }, now);
-    if (fb) console.log(`[taste] чат ${fb === 'liked' ? 'посмеялся' : fb === 'disliked' ? 'недоволен' : 'ответил'}`);
+    recordFeedback(st, { text, reply_to_message: msg.reply_to_message }, now);
     if (quickFacts(st, msg.from.id, text, now)) console.log('[memory] факт записан правилом');
   }
   if (record) return;

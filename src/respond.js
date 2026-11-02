@@ -7,6 +7,7 @@ import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji, exchangeLength } from './variety.js';
 import { bestOf } from './wit.js';
+import { logSay } from './log.js';
 import { transcript } from './prompts.js';
 import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
 
@@ -131,6 +132,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
     if (r.type === 'refuse') {
       console.log(`[${mode}] REFUSE (${res.provider})`);
       if (!direct || !replyTo) return false;
+      logSay({ kind: mode + ':REFUSE', provider: res.provider, question: lastText, answer: r.text });
       await say(chatId, st, r.text || pickLine(DECLINES), replyTo);
       return true;
     }
@@ -153,6 +155,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
       } else {
         if (replyTo && Date.now() - (st.lastDeclineAt || 0) > 60_000) {
           st.lastDeclineAt = Date.now();
+          logSay({ kind: mode + ':нет-идей', question: lastText, answer: '(стандартная фраза «мысль не идёт»)' });
           await say(chatId, st, pickLine(NO_IDEAS), replyTo);
           return true;
         }
@@ -177,7 +180,9 @@ export async function respond(chatId, st, { mode, replyTo }) {
       if (!replyTo || !(await react(chatId, replyTo, r.emoji))) return false;
       st.lastReactAt = now;
     } else {
-      await say(chatId, st, trimEmoji(r.text, st), replyTo, { angle: angle.id });
+      const finalText = trimEmoji(r.text, st);
+      logSay({ kind: mode, angle: angle.id, provider: res.provider, question: lastText, answer: finalText });
+      await say(chatId, st, finalText, replyTo, { angle: angle.id });
     }
     if (!direct) {
       st.unsol.push(now);

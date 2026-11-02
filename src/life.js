@@ -3,6 +3,7 @@ import { generate } from './ai.js';
 import { parseReply } from './parse.js';
 import { system, pokePrompt, greetingPrompt, talePrompt, transcript } from './prompts.js';
 import { bestOf } from './wit.js';
+import { logSay } from './log.js';
 import { pickAngle, repetition } from './variety.js';
 import { bodyJokeAboutPerson } from './safety.js';
 import { app, say } from './respond.js';
@@ -149,6 +150,7 @@ export function pickInitiative(st, now, { hour, today, rng = Math.random }) {
 }
 
 async function speak(chatId, st, text, kind, angle) {
+  logSay({ kind: `инициатива:${kind}`, angle: angle?.id, question: '', answer: text });
   const sent = await say(chatId, st, text, undefined, { angle: angle?.id });
   const now = Date.now();
   st.initLog = [...(st.initLog || []), now];

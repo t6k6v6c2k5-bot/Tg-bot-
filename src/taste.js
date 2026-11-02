@@ -1,4 +1,5 @@
 import { LAUGH } from './filter.js';
+import { logTaste } from './log.js';
 
 // Учимся на реакции чата: смеются, ругаются или просто отвечают на реплики бота.
 
@@ -47,17 +48,20 @@ export function recordFeedback(st, msg, now = Date.now()) {
     push(st.taste.disliked, target.text);
     bump(st, target.angle, 0);
     target.scored = true;
+    logTaste('НЕ ЗАШЛО', target.text, text);
     return 'disliked';
   }
   if (laugh) {
     push(st.taste.liked, target.text);
     bump(st, target.angle, 1);
     target.scored = true;
+    logTaste('ЗАШЛО', target.text, text);
     return 'liked';
   }
   if (viaReply) {
     bump(st, target.angle, 0.7); // ответили боту — уже неплохо
     target.scored = true;
+    logTaste('ответили боту', target.text, text);
     return 'engaged';
   }
   return null;
