@@ -14,3 +14,8 @@ export function logTaste(verdict, botText, humanText) {
   if (!ON) return;
   console.log(`[taste] ${verdict} | бот: «${cut(botText, 120)}» | в ответ: «${cut(humanText, 100)}»`);
 }
+
+export function logMedia(kind, text) {
+  if (!ON) return;
+  console.log(`[media] ${kind} распознано: «${cut(text, 200)}»`);
+}

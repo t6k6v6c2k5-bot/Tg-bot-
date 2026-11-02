@@ -5,7 +5,7 @@ import { system, pokePrompt, needlePrompt, greetingPrompt, talePrompt, transcrip
 import { bestOf } from './wit.js';
 import { logSay } from './log.js';
 import { pickAngle, repetition } from './variety.js';
-import { bodyJokeAboutPerson } from './safety.js';
+import { bodyJokeAboutPerson, isGrounded } from './safety.js';
 import { app, say } from './respond.js';
 import { factsAbout } from './memory.js';
 import { isSerious } from './filter.js';
@@ -118,7 +118,12 @@ const WEEK = 7 * 24 * H;
 export function pickNeedleTarget(st, now, rng = Math.random) {
   const seen = lastSeen(st);
   const counts = {};
-  for (const m of st.history.slice(-600)) if (!m.bot && m.uid && now - m.ts < 3 * 24 * H) counts[m.uid] = (counts[m.uid] || 0) + 1;
+  const fresh = {};
+  for (const m of st.history.slice(-600)) {
+    if (m.bot || !m.uid || m.text.startsWith('[')) continue;
+    if (now - m.ts < 3 * 24 * H) counts[m.uid] = (counts[m.uid] || 0) + 1;
+    if (now - m.ts < 24 * H) fresh[m.uid] = (fresh[m.uid] || 0) + 1; // за сутки: иначе шутка про давно забытое выглядит бредом
+  }
   const pool = Object.entries(seen).filter(
     ([uid, ts]) =>
       st.users[uid] &&
@@ -126,6 +131,7 @@ export function pickNeedleTarget(st, now, rng = Math.random) {
       !(st.leaveAlone?.[uid] > now - WEEK) &&
       now - ts < 3 * 24 * H &&
       (counts[uid] || 0) >= 3 &&
+      (fresh[uid] || 0) >= 2 &&
       now - (st.needleLast?.[uid] || 0) >= 24 * H &&
       now - (st.roastLast?.[uid] || 0) >= config.roastCooldownMs,
   );
@@ -208,14 +214,14 @@ async function speak(chatId, st, text, kind, angle, entities) {
 }
 
 // Инициатива: несколько вариантов, редактор выбирает лучший; если все слабые — молчим
-async function ask(st, prompt, maxTokens = 180, opts) {
+async function ask(st, prompt, maxTokens = 180, opts, check) {
   const angle = pickAngle(st);
   const res = await bestOf({
     system: system(st, app.name, { angle }),
     prompt,
     context: transcript(st.history, 6),
     direct: false,
-    reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0,
+    reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0 || (check ? !check(t) : false),
     maxTokens: Math.round(maxTokens / 2),
     tier: 'smart',
     parseOpts: opts,
@@ -280,9 +286,10 @@ export async function runInitiative(chatId, st, kind, today) {
     // фиксируем попытку сразу: даже если ИИ промолчит, за этого человека не цепляемся сутки
     st.needleLast = { ...(st.needleLast || {}), [target.uid]: now };
     st.lastNeedleAt = now;
-    const lines = st.history.filter((m) => !m.bot && String(m.uid) === String(target.uid) && now - m.ts < 3 * 24 * H).slice(-6).map((m) => m.text);
+    const lines = st.history.filter((m) => !m.bot && String(m.uid) === String(target.uid) && now - m.ts < 24 * H && !m.text.startsWith('[')).slice(-6).map((m) => m.text);
+    if (lines.length < 2) return;
     const handle = u.username ? `@${u.username}` : '';
-    const r = await ask(st, needlePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, history: st.history }), 160);
+    const r = await ask(st, needlePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, history: st.history }), 160, undefined, (t) => isGrounded(t, lines));
     if (r?.type !== 'text') return;
     st.roastLast[target.uid] = now;
     const m = withMention(u, target.uid, r.text);

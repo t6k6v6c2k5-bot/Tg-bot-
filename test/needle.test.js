@@ -105,7 +105,7 @@ test('say передаёт entities, а если Telegram их не принял
 test('инициатива «подкол»: тегает человека, фиксирует паузы и не повторяет цель', async () => {
   sent.length = 0;
   app.telegram.sendMessage = async (c, t, o) => (sent.push({ t, o }), { message_id: 800 + sent.length });
-  globalThis.fetch = async () => reply('1) Ваня, ты третий день «почти закончил» дедлайн, где результат?\nЛУЧШИЙ: 1');
+  globalThis.fetch = async () => reply('1) Ваня, «говорит про дедлайн» — а где результат, оратор?\nЛУЧШИЙ: 1');
   const st = mk({ optOut: { 2: true } }); // единственная возможная цель — Ваня
   await runInitiative(-1, st, 'needle', 'd');
   assert.equal(sent.length, 1);

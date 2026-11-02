@@ -4,6 +4,7 @@ import { touchUser, remember, chat, save, touchChat } from './store.js';
 import { isDirect, LEVELS } from './filter.js';
 import { mediaKind, label, mediaBudgetOk, transcribe, describePhoto } from './media.js';
 import { processMessage } from './pipeline.js';
+import { logMedia } from './log.js';
 
 // Telegram не отдаёт ботам полный список участников группы — только админов и их общее число.
 // Остальных Батя узнаёт, когда они пишут, шлют медиа, входят/выходят или их упоминают.
@@ -60,6 +61,7 @@ export async function ingestNonText(ctx) {
       const tr = await transcribe(m);
       if (tr) {
         entry.text = `${tag} ${tr}`;
+        logMedia('голосовое', tr);
         text = tr; // дальше как обычная речь: можно обратиться к Бате голосом
       }
     } else if (kind === 'photo' && mediaBudgetOk(st, now)) {
@@ -69,6 +71,7 @@ export async function ingestNonText(ctx) {
         const d = await describePhoto(m);
         if (d) {
           entry.text = `[фото: ${d}]${m.caption ? ' ' + m.caption : ''}`;
+          logMedia('фото', d);
           text = entry.text;
         }
       }

@@ -28,3 +28,27 @@ export const REFUSALS = [
 export const NO_IDEAS = ['Что-то мысль не идёт. Спроси иначе?', 'Голова пустая, как холодильник в конце месяца. Давай другой вопрос.', 'Не придумал, не буду врать. Подкинь тему?'];
 export const DECLINES = ['Тут я пас.', 'Это не ко мне.'];
 export const pickLine = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// ---- опора на реальные слова ----
+const norm = (t) => t.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+const stem = (w) => w.slice(0, 5);
+
+/**
+ * Подкол обязан опираться на то, что человек РЕАЛЬНО написал: либо цитирует его слова («…»),
+ * либо пересказывает с совпадением хотя бы двух значимых слов. Иначе это выдумка («фотки грязи», которых не было).
+ */
+export function isGrounded(text, lines) {
+  if (!lines?.length) return false;
+  const hay = norm(lines.join(' . '));
+  const hayWords = new Set(hay.split(' ').filter((w) => w.length > 3).map(stem));
+  const quotes = [...text.matchAll(/[«"“]([^»"”]{4,})[»"”]/gu)].map((m) => norm(m[1]));
+  if (quotes.length) {
+    return quotes.some((q) => {
+      if (hay.includes(q)) return true;
+      const qw = q.split(' ').filter((w) => w.length > 2);
+      return qw.length > 0 && qw.filter((w) => hayWords.has(stem(w))).length / qw.length >= 0.7; // цитата с мелкими неточностями
+    });
+  }
+  const words = [...new Set(norm(text).split(' ').filter((w) => w.length > 4).map(stem))];
+  return words.filter((w) => hayWords.has(w)).length >= 2;
+}
