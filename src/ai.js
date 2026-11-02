@@ -41,21 +41,30 @@ async function post(url, headers, body) {
 const providers = {
   gemini: {
     enabled: () => Boolean(config.geminiKey),
-    models: () => config.geminiModels,
+    models: (tier) => (tier === 'smart' ? [...config.geminiSmartModels, ...config.geminiModels] : config.geminiModels),
     async call({ system, prompt, maxTokens, temperature, model, json }) {
       const generationConfig = { maxOutputTokens: maxTokens, temperature };
       if (json) generationConfig.responseMimeType = 'application/json';
-      // у 2.5 Flash «размышления» съедают лимит токенов — для коротких реплик не нужны
-      if (/2\.5-flash(?!-lite)/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-      const data = await post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        { 'x-goog-api-key': config.geminiKey },
-        {
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig,
-        },
-      );
+      const send = (gc) =>
+        post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          { 'x-goog-api-key': config.geminiKey },
+          {
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: gc,
+          },
+        );
+      let data;
+      // «Размышления» съедают лимит токенов и замедляют короткие реплики — выключаем (у lite их и нет)
+      if (!/lite/.test(model)) {
+        try {
+          data = await send({ ...generationConfig, thinkingConfig: { thinkingBudget: 0 } });
+        } catch (e) {
+          if (!(e.status === 400 && /think/i.test(e.message))) throw e; // модель не умеет отключать — повторим как есть
+        }
+      }
+      data ??= await send(generationConfig);
       return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
     },
   },
@@ -94,13 +103,16 @@ function rateOk(high) {
  *          prefer?:'main'|'edgy', high?:boolean}} o
  * @returns {Promise<{text:string, provider:string}|null>} null = никто не ответил, молчим
  */
-export async function generate({ system, prompt, maxTokens = 120, temperature = 0.9, prefer = 'main', high = false, json = false }) {
+export async function generate({ system, prompt, maxTokens = 120, temperature = 0.9, prefer = 'main', high = false, json = false, tier = 'fast' }) {
   if (!rateOk(high)) {
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
   const names = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled());
-  const candidates = names.flatMap((name) => providers[name].models().map((model) => ({ name, model })));
+  const seen = new Set();
+  const candidates = names
+    .flatMap((name) => providers[name].models(tier).map((model) => ({ name, model })))
+    .filter((c) => !seen.has(`${c.name}:${c.model}`) && seen.add(`${c.name}:${c.model}`));
   for (const { name, model } of candidates) {
     const key = `${name}:${model}`;
     if ((cooldown[key] || 0) > Date.now()) continue;

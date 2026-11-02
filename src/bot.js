@@ -6,6 +6,7 @@ import { app, respond, react } from './respond.js';
 import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
 import { watchQuestion } from './scheduler.js';
 import { learn } from './memory.js';
+import { onHumanMessage } from './life.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -36,6 +37,7 @@ export async function createBot() {
       ts: Date.now(),
     });
 
+    onHumanMessage(st);
     const now = Date.now();
     const isPrivate = ctx.chat.type === 'private';
     const direct =

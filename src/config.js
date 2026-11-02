@@ -11,6 +11,14 @@ export const config = {
     .filter(Boolean),
   grokKey: env.GROK_API_KEY,
   grokModel: env.GROK_MODEL || 'grok-4-fast',
+  // «умный» уровень для прямых вопросов, дальше запасные из geminiModels
+  geminiSmartModels: (env.GEMINI_SMART_MODEL || 'gemini-3.5-flash,gemini-3.8-flash')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  wakeHour: num('WAKE_HOUR', 9), // когда желать доброго утра
+  quietFrom: num('QUIET_FROM', 0), // ночная тишина: с … до … (по BOT_TZ)
+  quietTo: num('QUIET_TO', 8),
   aliases: (env.BOT_ALIASES || 'бот')
     .split(',')
     .map((s) => s.trim().toLowerCase())

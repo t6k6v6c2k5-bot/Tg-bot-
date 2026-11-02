@@ -1,41 +1,33 @@
 import { config } from './config.js';
 import { allChats, dayKey, hourOf, save } from './store.js';
-import { sendDigest, sendRevive } from './commands.js';
+import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
 import { respond } from './respond.js';
-
-const HOUR = 3600_000;
+import { pickInitiative, runInitiative, trackIgnore } from './life.js';
 
 async function tick() {
   const now = Date.now();
   const hour = hourOf(now);
+  const today = dayKey(now);
   for (const [chatId, st] of allChats()) {
-    if (chatId > 0 || st.settings.mutedUntil > now) continue; // только группы, не в режиме тишины
+    if (chatId > 0) continue; // только группы
     try {
+      trackIgnore(st, now);
+      if (st.settings.mutedUntil > now) continue;
+
       // Итоги дня — раз в сутки
-      const today = dayKey(now);
       if (hour === config.digestHour && st.lastDigestDay !== today) {
         st.lastDigestDay = today;
         save();
         await sendDigest(chatId, st);
         continue;
       }
-      // Оживление: днём, после долгой тишины в обычно живом чате
-      const lastHuman = [...st.history].reverse().find((m) => !m.bot)?.ts ?? 0;
-      const silent = now - lastHuman;
-      if (
-        hour >= 11 && hour < 22 &&
-        st.settings.activity >= 2 &&
-        silent > 4 * HOUR && silent < 3 * 24 * HOUR &&
-        now - st.lastReviveAt > 12 * HOUR &&
-        st.history.length > 30 &&
-        canSpeakUnsolicited({ ...st, history: [] }, now)
-      ) {
-        st.lastReviveAt = now; // фиксируем попытку, даже если ИИ скажет SKIP
-        if (await sendRevive(chatId, st)) {
-          st.unsol.push(now);
-          st.lastUnsolAt = now;
-        }
+
+      // Своя жизнь: приветствие, оживление, обращение к людям, байки
+      const kind = pickInitiative(st, now, { hour, today });
+      if (kind) {
+        await runInitiative(chatId, st, kind, today);
+        save();
       }
     } catch (e) {
       console.error('[scheduler]', chatId, e.message);

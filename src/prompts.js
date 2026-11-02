@@ -8,7 +8,7 @@ const RULES = `Ты — «{BOT}», бот в групповом чате дру�
 ФОРМАТ ОТВЕТА (строго один из трёх):
 1) SKIP — если сказать нечего, не смешно или момент неподходящий. Это нормально и часто лучший вариант.
 2) REACT:<один эмодзи> — если уместнее поставить реакцию, а не писать.
-3) Сама реплика: 1–2 короткие строки, без вступлений и пояснений, максимум один эмодзи.
+3) Сама реплика: {LEN}
 
 ЖЁСТКИЕ ПРАВИЛА:
 - Подкалывать можно только за слова и поступки в чате. Никогда: внешность, семья, здоровье, национальность, религия, деньги, личная жизнь.
@@ -18,7 +18,14 @@ const RULES = `Ты — «{BOT}», бот в групповом чате дру�
 - Никаких предположений о личной жизни людей: не называй никого холостяком, женатым, одиноким, безработным, не упоминай их детей, родителей, отношения, доход. Обращайся по имени или «молодёжь», «орлы».
 {EXTRA}`;
 
-export function system(st, botName) {
+const when = () => {
+  const d = new Date();
+  const day = new Intl.DateTimeFormat('ru-RU', { timeZone: config.tz, weekday: 'long' }).format(d);
+  const time = new Intl.DateTimeFormat('ru-RU', { timeZone: config.tz, hour: '2-digit', minute: '2-digit' }).format(d);
+  return `Сейчас в чате: ${day}, ${time}. Учитывай время суток и день недели (ночью — «чего не спите», утром — «кофе», пятница — «выходные»).`;
+};
+
+export function system(st, botName, { long = false } = {}) {
   const names = Object.entries(st.optOut)
     .filter(([, v]) => v)
     .map(([uid]) => st.users[uid]?.name)
@@ -32,7 +39,10 @@ export function system(st, botName) {
   ]
     .filter(Boolean)
     .join('\n');
-  return RULES.replace('{BOT}', botName).replace('{EXTRA}', extra) + memoryBlock(st, st.history);
+  const len = long
+    ? 'обычно 1–2 строки; но если просят объяснить, посоветовать или рассказать по делу — ответь чётко, точно и полезно, до 5 строк (сначала суть, потом шутка). Не выдумывай факты: если не знаешь, так и скажи по-батински.'
+    : '1–2 короткие строки, без вступлений и пояснений, максимум один эмодзи.';
+  return RULES.replace('{BOT}', botName).replace('{EXTRA}', extra).replace('{LEN}', len) + '\n' + when() + memoryBlock(st, st.history);
 }
 
 const clip = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
@@ -53,8 +63,8 @@ export const TASK = {
   unanswered: 'Кто-то задал вопрос, и никто не ответил. Ответь коротко и с юмором или SKIP, если не знаешь.',
 };
 
-export function chatPrompt(history, mode) {
-  return `Последние сообщения чата (сверху старые):\n${transcript(history)}\n\nЗадача: ${TASK[mode]}`;
+export function chatPrompt(history, mode, n = config.historyInPrompt) {
+  return `Последние сообщения чата (сверху старые):\n${transcript(history, n)}\n\nЗадача: ${TASK[mode]}`;
 }
 
 export function roastPrompt(targetName, targetLines, askedBy, facts = []) {
@@ -81,3 +91,23 @@ export function revivePrompt(history) {
 - мини-опрос ровно в формате: POLL: вопрос | вариант 1 | вариант 2 | вариант 3
 Если последние темы были тяжёлыми — ответь SKIP.`;
 }
+
+// ---- самостоятельные инициативы ----
+
+export function pokePrompt({ name, handle, facts, lines, quietHours, history }) {
+  return `В чате давно тихо. Недавний контекст:\n${transcript(history, 8)}
+
+Обратись лично к участнику: ${name}${handle ? ` (${handle})` : ''}. Его не было слышно примерно ${quietHours} ч.
+${facts.length ? `Что ты о нём помнишь: ${facts.join('; ')}.\n` : ''}${lines.length ? `Его последние фразы в чате:\n${lines.map((l) => '- ' + l.slice(0, 160)).join('\n')}\n` : ''}
+Задача: тёплая, ироничная реплика в 1–2 строки именно ему: поинтересуйся, как он, вспомни что-то из его слов или интересов, зови обратно в разговор. Не дави и не упрекай, что он молчит. Если подходящего повода нет — SKIP.`;
+}
+
+export const greetingPrompt = (history) => `Утро. Последние сообщения чата (могут быть со вчера):
+${transcript(history, 10)}
+
+Задача: поприветствуй чат в образе Бати (1–2 строки): бытовая забота, лёгкая «мысль дня» или отсылка ко вчерашнему, если там было что-то яркое. Без банального «доброе утро всем».`;
+
+export const talePrompt = (history) => `В чате тихо. Контекст:
+${transcript(history, 6)}
+
+Задача: расскажи коротенькую байку «из жизни Бати» (2–3 строки): дача, гараж, рыбалка, сосед дядя Миша, магазин, ремонт — смешно и по-доброму, с неожиданной концовкой. Это шуточная выдумка персонажа, не факт о людях из чата. Если неуместно — SKIP.`;

@@ -11,7 +11,7 @@ let saveTimer = null;
 const fresh = () => ({
   history: [], // {id, uid, name, text, ts, bot?}
   users: {}, // uid -> {name, username}
-  settings: { activity: 3, tone: 'soft', mutedUntil: 0 },
+  settings: { activity: 3, tone: 'soft', mutedUntil: 0, autonomy: true },
   optOut: {}, // uid -> true  (/неподкалывай)
   taboo: [],
   roastLast: {}, // uid -> ts последнего подкола/упоминания
@@ -23,6 +23,14 @@ const fresh = () => ({
   lastDigestCmdAt: 0,
   memory: emptyMemory(),
   memOff: {}, // uid -> true (/забудь): не запоминать этого человека
+  initLog: [], // ts самостоятельных инициатив за сутки
+  lastInitAt: 0,
+  initTryAt: 0,
+  initOpen: false, // последняя инициатива ещё ждёт реакции
+  ignored: 0, // сколько инициатив подряд остались без реакции
+  lastGreetDay: '',
+  lastTaleAt: 0,
+  pokeLast: {}, // uid -> когда последний раз звали по имени
   sinceLearn: 0, // сообщений с последнего «обучения»
   lastLearnAt: 0,
 });

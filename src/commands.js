@@ -22,6 +22,7 @@ const ALIAS = {
   итоги: 'digest', digest: 'digest',
   оживи: 'revive', revive: 'revive',
   тон: 'tone', tone: 'tone',
+  жизнь: 'life', life: 'life',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
@@ -37,6 +38,7 @@ export const BOT_COMMANDS = [
   { command: 'revive', description: 'Оживить чат' },
   { command: 'tone', description: 'Тон подколов: soft / hard' },
   { command: 'taboo', description: 'Табу-темы' },
+  { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
@@ -45,7 +47,8 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 Позови по имени, @упоминанием или ответом на моё сообщение.
 
 /тихо [мин] — помолчать (0 — вернуть голос)
-/активность 1-5 — как часто влезаю сам
+/активность 1-5 — как часто влезаю сам (со 2-го уровня сам заговариваю, если долго тихо)
+/жизнь вкл|выкл — своя жизнь: приветствия, байки, вопросы и обращения к людям
 /прожарь @ник — подколоть (или ответом на сообщение)
 /неподкалывай — не подкалывать тебя (повтор — вернуть)
 /тон мягко|жёстко — тон подколов
@@ -108,6 +111,14 @@ async function exec(ctx, key, cmd, message) {
       save();
       await reply(st.optOut[from.id] ? 'Принято, тебя не трогаю. Повторная команда вернёт всё назад.' : 'Ну всё, ты в игре 😈');
       break;
+    case 'life': {
+      if (/^(вкл|on|да)/i.test(cmd.args)) st.settings.autonomy = true;
+      else if (/^(выкл|off|нет)/i.test(cmd.args)) st.settings.autonomy = false;
+      else return void (await reply(`Своя жизнь: ${st.settings.autonomy === false ? 'выкл' : 'вкл'}. /жизнь вкл|выкл`));
+      save();
+      await reply(st.settings.autonomy ? 'Живу своей жизнью: могу и поздороваться, и позвать кого-нибудь.' : 'Хорошо, сам заговаривать не буду. Только если позовут.');
+      break;
+    }
     case 'memory': {
       if (st.memOff[from.id]) return void (await reply('Ты просил тебя не запоминать, так что я о тебе ничего не веду. Вернуть: /забудь'));
       const facts = (st.memory.users[from.id] || []).map((f) => `• ${f.t}`);

@@ -5,7 +5,7 @@ export const REACTIONS = new Set(
 );
 
 // ИИ отвечает одним из: SKIP | REACT:<эмодзи> | текст
-export function parseReply(raw) {
+export function parseReply(raw, { maxLines = 2, maxChars = config.maxReplyChars } = {}) {
   if (!raw) return { type: 'skip' };
   let t = raw.trim().replace(/^["«“]+|["»”]+$/g, '').trim();
   if (!t || /^\W*SKIP\b/i.test(t)) return { type: 'skip' };
@@ -19,8 +19,8 @@ export function parseReply(raw) {
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
-    .slice(0, 2)
+    .slice(0, maxLines)
     .join('\n');
-  if (t.length > config.maxReplyChars) t = t.slice(0, config.maxReplyChars - 1).trimEnd() + '…';
+  if (t.length > maxChars) t = t.slice(0, maxChars - 1).trimEnd() + '…';
   return { type: 'text', text: t };
 }
