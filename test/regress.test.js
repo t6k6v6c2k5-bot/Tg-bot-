@@ -135,3 +135,30 @@ test('в личке один на один затянувшийся обмен �
   await respond(-5555, mk('ну и как дела?'), { mode: 'direct', replyTo: 99 }); // группа: после 5 реплик только реакция
   assert.equal(sent.length, 0);
 });
+
+test('диагноз как оскорбление отсекается, обычные слова — нет', async () => {
+  const { usesDiagnosisAsSlur } = await import('../src/safety.js');
+  for (const t of ['у тебя биполярка быстрее процессора', 'ну ты шизик', 'ты аутист что ли', 'ну ты даун', 'олигофрен какой-то']) assert.ok(usesDiagnosisAsSlur(t), t);
+  for (const t of ['у тебя настроение меняется быстрее, чем погода', 'даунтайм сервера', 'это же классика']) assert.ok(!usesDiagnosisAsSlur(t), t);
+});
+
+test('реплика с диагнозом перегенерируется и до человека не доходит', async () => {
+  sent.length = 0;
+  let n = 0;
+  globalThis.fetch = async () => {
+    n++;
+    return reply(n === 1 ? '1) Сам позвал и сам выгоняешь — у тебя биполярка быстрее процессора.\nЛУЧШИЙ: 1' : '1) Сам позвал и сам выгоняешь, режим «нужен-не нужен» у тебя быстрее процессора.\nЛУЧШИЙ: 1');
+  };
+  await respond(-41, mkst('Пошёл в жопу'), { mode: 'direct', replyTo: 1 });
+  assert.equal(sent.length, 1);
+  assert.doesNotMatch(sent[0], /биполяр/i);
+});
+
+test('обращение по имени в конце реплики не штампуется', async () => {
+  const { repetition } = await import('../src/variety.js');
+  const b = (text) => ({ id: 1, uid: 99, name: 'Батя', text, ts: Date.now(), bot: true });
+  const st = { history: [b('Электричество нынче дорого, сам выключай, Влад.'), b('Через ИИ — это как заказать пиццу, Влад.'), b('Настолько, что табличку уже поздно вешать, Влад.')] };
+  assert.ok(repetition('Клауд говоришь? Ну хоть не туча, Влад.', st).length > 0);
+  assert.deepEqual(repetition('Клауд говоришь? Ну хоть не туча.', st), []);
+  assert.deepEqual(repetition('Влад, клауд говоришь?', st), []); // имя в начале — другое дело, считает opener
+});

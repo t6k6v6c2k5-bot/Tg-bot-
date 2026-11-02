@@ -5,7 +5,7 @@ import { system, pokePrompt, needlePrompt, greetingPrompt, talePrompt, transcrip
 import { bestOf } from './wit.js';
 import { logSay } from './log.js';
 import { pickAngle, repetition } from './variety.js';
-import { bodyJokeAboutPerson, isGrounded } from './safety.js';
+import { bodyJokeAboutPerson, isGrounded, usesDiagnosisAsSlur } from './safety.js';
 import { app, say } from './respond.js';
 import { factsAbout } from './memory.js';
 import { isSerious } from './filter.js';
@@ -221,7 +221,7 @@ async function ask(st, prompt, maxTokens = 180, opts, check) {
     prompt,
     context: transcript(st.history, 6),
     direct: false,
-    reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0 || (check ? !check(t) : false),
+    reject: (t) => bodyJokeAboutPerson(t, st) || usesDiagnosisAsSlur(t) || repetition(t, st).length > 0 || (check ? !check(t) : false),
     maxTokens: Math.round(maxTokens / 2),
     tier: 'smart',
     parseOpts: opts,

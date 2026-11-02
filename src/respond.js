@@ -10,7 +10,7 @@ import { bestOf } from './wit.js';
 import { wantsSerious, isAbuse } from './filter.js';
 import { logSay } from './log.js';
 import { transcript } from './prompts.js';
-import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
+import { bodyJokeAboutPerson, bodyRequestNote, usesDiagnosisAsSlur, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
 
@@ -107,7 +107,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
             prompt,
             context: transcript(st.history, 8),
             direct: direct && !abusive,
-            reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0,
+            reject: (t) => bodyJokeAboutPerson(t, st) || usesDiagnosisAsSlur(t) || repetition(t, st).length > 0,
             tier: needSmart ? 'smart' : 'fast',
             high: direct,
             maxTokens: direct ? 160 : 70,
@@ -137,6 +137,13 @@ export async function respond(chatId, st, { mode, replyTo }) {
       if (ra.type === 'text') r = ra;
     }
     console.log(`[${mode}] ${res.provider} -> ${r.type} (${angle.id})${res.weak ? ' [редактор: всё слабо]' : ''}${res.pick ? ` [выбран ${res.pick}]` : ''}`);
+    if (r.type === 'text' && usesDiagnosisAsSlur(r.text)) {
+      console.log(`[${mode}] диагноз как оскорбление — перегенерирую`);
+      const resD = await ask(['диагнозы и психические расстройства как оскорбление (биполярка, шизик, аутист и т. п.)']);
+      const rD = resD ? parseReply(resD.text, popts) : { type: 'skip' };
+      if (rD.type === 'text' && !usesDiagnosisAsSlur(rD.text)) r = rD;
+      else return false;
+    }
     if (r.type === 'text' && bodyJokeAboutPerson(r.text, st)) {
       console.log(`[${mode}] шутка про тело/интим участника — перегенерирую`);
       const res3 = await ask(['шутки про тело, внешность и интимную жизнь людей из чата']);

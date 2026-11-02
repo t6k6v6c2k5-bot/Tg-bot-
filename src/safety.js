@@ -52,3 +52,7 @@ export function isGrounded(text, lines) {
   const words = [...new Set(norm(text).split(' ').filter((w) => w.length > 4).map(stem))];
   return words.filter((w) => hayWords.has(w)).length >= 2;
 }
+
+// Психиатрические и неврологические диагнозы как оскорбление («биполярка», «шизик», «аутист», «даун»): подкол должен быть про слова и поступки
+const DIAGNOSIS_SLUR = /(?<!\p{L})(?:биполяр\p{L}*|шизофрен\p{L}*|шизик\p{L}*|шизоид\p{L}*|аутист\p{L}*|аутизм\p{L}*|даун(?:ы|а|у|е|ом|ов|ам|ами)?(?!\p{L})|олигофрен\p{L}*|дцп|имбецил\p{L}*|дегенерат\p{L}*|псих(?:ушк\p{L}*|больниц\p{L}*|диспансер\p{L}*))/iu;
+export const usesDiagnosisAsSlur = (text) => DIAGNOSIS_SLUR.test(text || '');

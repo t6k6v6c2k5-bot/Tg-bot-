@@ -49,6 +49,10 @@ export function repetition(text, st) {
   // одинаковое начало («Слушай, Ваня», «Ну ты даёшь») в недавних репликах
   const o = opener(text);
   if (o.split(' ').length >= 2 && recent.some((r) => opener(r) === o)) return [`начало «${o}…» (начни иначе)`];
+  // реплика кончается обращением по имени («…, Влад.») — и это уже в двух из четырёх последних
+  const tail = (t) => (t.match(/,\s*(\p{Lu}\p{L}{2,})[.!?…\s]*$/u) || [])[1]?.toLowerCase();
+  const myTail = tail(text);
+  if (myTail && recent.slice(-4).filter((r) => tail(r) === myTail).length >= 2) return [`обращение «${myTail}» в конце (не заканчивай именем)`];
   // то же первое слово («Слушай», «Ну») уже в двух из четырёх последних реплик
   const first = o.split(' ')[0];
   if (first && recent.slice(-4).filter((r) => opener(r).split(' ')[0] === first).length >= 2) return [`слово «${first}» в начале (начни иначе)`];
