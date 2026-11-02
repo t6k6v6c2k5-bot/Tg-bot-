@@ -68,6 +68,13 @@ export function chat(id) {
   return st;
 }
 
+// Название и тип чата — для админки
+export function touchChat(st, c) {
+  if (!c) return;
+  if (c.title) st.title = c.title;
+  st.chatType = c.type;
+}
+
 export const allChats = () => [...chats.entries()];
 
 export function save() {

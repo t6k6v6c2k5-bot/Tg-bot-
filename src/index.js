@@ -20,4 +20,4 @@ process.once('SIGTERM', () => stop('SIGTERM'));
 
 startScheduler();
 // launch() в Telegraf 4 завершается только при остановке бота
-await bot.launch({ allowedUpdates: ['message', 'chat_member'] }, () => console.log('[bot] запущен'));
+await bot.launch({ allowedUpdates: ['message', 'chat_member', 'callback_query'] }, () => console.log('[bot] запущен'));

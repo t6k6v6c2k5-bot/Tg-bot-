@@ -1,6 +1,6 @@
 import { app } from './respond.js';
 import { config } from './config.js';
-import { touchUser, remember, chat, save } from './store.js';
+import { touchUser, remember, chat, save, touchChat } from './store.js';
 import { isDirect, LEVELS } from './filter.js';
 import { mediaKind, label, mediaBudgetOk, transcribe, describePhoto } from './media.js';
 import { processMessage } from './pipeline.js';
@@ -31,6 +31,7 @@ export async function ingestNonText(ctx) {
   const m = ctx.message;
   if (!m || m.from?.is_bot || ctx.chat.type === 'private') return;
   const st = chat(ctx.chat.id);
+  touchChat(st, ctx.chat);
 
   // вошли / вышли
   for (const u of m.new_chat_members || []) if (!u.is_bot) touchUser(st, u, { left: false, firstSeen: Date.now() });

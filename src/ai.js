@@ -189,3 +189,19 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
   }
   return null;
 }
+
+/** Состояние провайдеров для админки: ключи, паузы, нагрузка. */
+export function aiStatus(now = Date.now()) {
+  const pauses = Object.entries(cooldown)
+    .filter(([, until]) => until > now)
+    .map(([id, until]) => ({ id, seconds: Math.ceil((until - now) / 1000), fails: fails[id] || 0 }))
+    .sort((a, b) => b.seconds - a.seconds);
+  while (calls.length && now - calls[0] > 60_000) calls.shift();
+  return {
+    gemini: { keys: config.geminiKeys.length, models: [...new Set([...config.geminiSmartModels, ...config.geminiModels])] },
+    groq: { keys: config.groqKeys.length, models: config.groqModels },
+    grok: { enabled: Boolean(config.grokKey) },
+    callsLastMinute: calls.length,
+    pauses,
+  };
+}

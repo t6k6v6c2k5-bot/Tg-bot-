@@ -35,6 +35,10 @@ export const config = {
   wakeHour: num('WAKE_HOUR', 9), // когда желать доброго утра
   quietFrom: num('QUIET_FROM', 0), // ночная тишина: с … до … (по BOT_TZ)
   quietTo: num('QUIET_TO', 8),
+  // Админка: числовые Telegram-ID через запятую (надёжнее всего). Если не заданы, админом становится тот,
+  // кто первым напишет боту в личку /admin с ником ADMIN_USERNAME; его ID запоминается и дальше решает только он.
+  adminIds: (env.ADMIN_IDS || '').split(/[\s,;]+/).filter(Boolean).map(Number).filter(Number.isFinite),
+  adminUsername: (env.ADMIN_USERNAME ?? 'vladik4638').replace(/^@/, '').toLowerCase(),
   aliases: (env.BOT_ALIASES || 'бот')
     .split(',')
     .map((s) => s.trim().toLowerCase())

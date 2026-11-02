@@ -1,10 +1,11 @@
 import { Telegraf } from 'telegraf';
 import { config } from './config.js';
-import { chat, remember } from './store.js';
+import { chat, remember, touchChat } from './store.js';
 import { app } from './respond.js';
 import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
 import { ingestNonText, onChatMember } from './roster.js';
 import { processMessage } from './pipeline.js';
+import { onAdminMessage, onAction } from './admin.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -18,7 +19,9 @@ export async function createBot() {
   bot.on('text', async (ctx) => {
     const msg = ctx.message;
     if (msg.from.is_bot) return;
+    if (ctx.chat.type === 'private' && (await onAdminMessage(ctx))) return; // админка (только для админа)
     const st = chat(ctx.chat.id);
+    touchChat(st, ctx.chat);
     const text = msg.text;
 
     // Команды (кириллические тоже: Telegram их не размечает, поэтому разбираем сами)
@@ -36,6 +39,8 @@ export async function createBot() {
     });
     await processMessage(ctx, st, msg, { text });
   });
+
+  bot.action(/^a:/, (ctx) => onAction(ctx)); // кнопки админки (проверка прав внутри)
 
   // всё, что не текст: стикеры, фото, голосовые, вход/выход людей (текст сюда не доходит)
   bot.on('message', (ctx) => ingestNonText(ctx));
