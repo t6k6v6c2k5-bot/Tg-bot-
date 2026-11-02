@@ -5,6 +5,7 @@ import { system, digestPrompt, revivePrompt } from './prompts.js';
 import { chat, dayKey, save } from './store.js';
 import { app, say, roast } from './respond.js';
 import { LEVELS } from './filter.js';
+import { emptyMemory } from './memory.js';
 
 export const parseCommand = (text) => {
   const m = text.match(/^\/([\p{L}0-9_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/u);
@@ -21,6 +22,8 @@ const ALIAS = {
   итоги: 'digest', digest: 'digest',
   оживи: 'revive', revive: 'revive',
   тон: 'tone', tone: 'tone',
+  чтопомнишь: 'memory', memory: 'memory',
+  забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
 };
 
@@ -34,6 +37,8 @@ export const BOT_COMMANDS = [
   { command: 'revive', description: 'Оживить чат' },
   { command: 'tone', description: 'Тон подколов: soft / hard' },
   { command: 'taboo', description: 'Табу-темы' },
+  { command: 'memory', description: 'Что бот помнит обо мне' },
+  { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
 
 const HELP = `Я молчу, пока не позовут, и лишь изредка встреваю сам.
@@ -45,6 +50,8 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /неподкалывай — не подкалывать тебя (повтор — вернуть)
 /тон мягко|жёстко — тон подколов
 /табу <тема> — запретная тема, /табу_список, /табу_сброс
+/чтопомнишь — что я помню о тебе
+/забудь — забыть тебя и не запоминать (повтор — вернуть); /забудь_всё — стереть память чата
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата`;
 
@@ -100,6 +107,23 @@ async function exec(ctx, key, cmd, message) {
       st.optOut[from.id] = !st.optOut[from.id];
       save();
       await reply(st.optOut[from.id] ? 'Принято, тебя не трогаю. Повторная команда вернёт всё назад.' : 'Ну всё, ты в игре 😈');
+      break;
+    case 'memory': {
+      if (st.memOff[from.id]) return void (await reply('Ты просил тебя не запоминать, так что я о тебе ничего не веду. Вернуть: /забудь'));
+      const facts = (st.memory.users[from.id] || []).map((f) => `• ${f.t}`);
+      await reply(facts.length ? `Что я о тебе помню:\n${facts.join('\n')}\n\nНе нравится — /забудь.` : 'Пока ничего особенного не записал.');
+      break;
+    }
+    case 'forget':
+      st.memOff[from.id] = !st.memOff[from.id];
+      if (st.memOff[from.id]) delete st.memory.users[from.id];
+      save();
+      await reply(st.memOff[from.id] ? 'Всё стёр и больше про тебя ничего не записываю. Повтор команды вернёт запоминание.' : 'Ладно, снова запоминаю тебя 🙂');
+      break;
+    case 'forgetall':
+      st.memory = emptyMemory();
+      save();
+      await reply('Память чата стёрта. Знакомимся заново, орлы.');
       break;
     case 'taboo': {
       if (!cmd.args) return void (await reply(st.taboo.length ? `Табу: ${st.taboo.join('; ')}` : 'Табу-тем нет. Добавить: /табу <тема>'));

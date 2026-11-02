@@ -3,6 +3,7 @@ import { generate } from './ai.js';
 import { parseReply } from './parse.js';
 import { system, chatPrompt, roastPrompt } from './prompts.js';
 import { remember } from './store.js';
+import { factsAbout } from './memory.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
 
@@ -106,7 +107,7 @@ export async function roast(chatId, st, { targetUid, askedBy, replyTo }) {
   const lines = st.history.filter((m) => !m.bot && String(m.uid) === String(targetUid)).slice(-10).map((m) => m.text);
   const res = await generate({
     system: system(st, app.name),
-    prompt: roastPrompt(target.name, lines, askedBy),
+    prompt: roastPrompt(target.name, lines, askedBy, factsAbout(st, targetUid).slice(-4)),
     prefer: 'edgy',
     temperature: 1,
     maxTokens: 100,

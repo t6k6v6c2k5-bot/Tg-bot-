@@ -5,6 +5,7 @@ import { decide, isDirect, cheapReaction } from './filter.js';
 import { app, respond, react } from './respond.js';
 import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
 import { watchQuestion } from './scheduler.js';
+import { learn } from './memory.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -45,6 +46,13 @@ export async function createBot() {
         aliases: config.aliases,
         replyToBot: msg.reply_to_message?.from?.id === app.id,
       });
+
+    // Обучение «блокнота»: раз в ~25 сообщений, не чаще раза в 10 минут
+    if (!isPrivate && ++st.sinceLearn >= 25 && now - st.lastLearnAt > 10 * 60_000) {
+      st.sinceLearn = 0;
+      st.lastLearnAt = now;
+      learn(chatId, st).then(save);
+    }
 
     const mode = decide({ direct, text, st, now });
     console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);

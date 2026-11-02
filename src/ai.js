@@ -42,8 +42,9 @@ const providers = {
   gemini: {
     enabled: () => Boolean(config.geminiKey),
     models: () => config.geminiModels,
-    async call({ system, prompt, maxTokens, temperature, model }) {
+    async call({ system, prompt, maxTokens, temperature, model, json }) {
       const generationConfig = { maxOutputTokens: maxTokens, temperature };
+      if (json) generationConfig.responseMimeType = 'application/json';
       // у 2.5 Flash «размышления» съедают лимит токенов — для коротких реплик не нужны
       if (/2\.5-flash(?!-lite)/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       const data = await post(
@@ -93,7 +94,7 @@ function rateOk(high) {
  *          prefer?:'main'|'edgy', high?:boolean}} o
  * @returns {Promise<{text:string, provider:string}|null>} null = никто не ответил, молчим
  */
-export async function generate({ system, prompt, maxTokens = 120, temperature = 0.9, prefer = 'main', high = false }) {
+export async function generate({ system, prompt, maxTokens = 120, temperature = 0.9, prefer = 'main', high = false, json = false }) {
   if (!rateOk(high)) {
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
@@ -105,7 +106,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     if ((cooldown[key] || 0) > Date.now()) continue;
     calls.push(Date.now());
     try {
-      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model })).trim();
+      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json })).trim();
       if (text) return { text, provider: key };
       console.log(`[ai] ${key}: пустой ответ`);
     } catch (e) {

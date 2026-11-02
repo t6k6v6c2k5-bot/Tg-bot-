@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { emptyMemory } from './memory.js';
 
 const FILE = path.join(config.dataDir, 'state.json');
 const MAX_HISTORY = 400;
@@ -20,6 +21,10 @@ const fresh = () => ({
   lastReviveAt: 0,
   lastDigestDay: '',
   lastDigestCmdAt: 0,
+  memory: emptyMemory(),
+  memOff: {}, // uid -> true (/забудь): не запоминать этого человека
+  sinceLearn: 0, // сообщений с последнего «обучения»
+  lastLearnAt: 0,
 });
 
 export function load() {
