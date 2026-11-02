@@ -4,7 +4,8 @@ import { createBot } from './bot.js';
 import { startScheduler } from './scheduler.js';
 
 if (!config.botToken) throw new Error('Не задан BOT_TOKEN');
-if (!config.geminiKey && !config.grokKey) throw new Error('Нужен хотя бы GEMINI_API_KEY или GROK_API_KEY');
+if (!config.geminiKeys.length && !config.grokKey) throw new Error('Нужен хотя бы GEMINI_API_KEY или GROK_API_KEY');
+console.log(`[ai] ключей Gemini: ${config.geminiKeys.length}, Grok: ${config.grokKey ? 'есть' : 'нет'}`);
 
 load();
 const bot = await createBot();

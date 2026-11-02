@@ -1,9 +1,19 @@
 const env = process.env;
+// Ключи Gemini из разных аккаунтов: GEMINI_API_KEY (можно списком через запятую), GEMINI_API_KEYS,
+// а также GEMINI_API_KEY_2 … GEMINI_API_KEY_9
+const geminiKeys = [
+  ...new Set(
+    [env.GEMINI_API_KEY, env.GEMINI_API_KEYS, ...Array.from({ length: 8 }, (_, i) => env[`GEMINI_API_KEY_${i + 2}`])]
+      .filter(Boolean)
+      .flatMap((v) => v.split(/[\s,;]+/))
+      .filter(Boolean),
+  ),
+];
 const num = (k, d) => (env[k] !== undefined && env[k] !== '' ? Number(env[k]) : d);
 
 export const config = {
   botToken: env.BOT_TOKEN,
-  geminiKey: env.GEMINI_API_KEY,
+  geminiKeys,
   // можно списком через запятую: первая — основная, остальные — запасные
   geminiModels: (env.GEMINI_MODEL || 'gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.8-flash')
     .split(',')

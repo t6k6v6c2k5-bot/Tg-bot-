@@ -5,6 +5,7 @@ import { config } from './config.js';
 const TIMEOUT_MS = 12_000;
 const TOTAL_BUDGET_MS = 30_000; // дольше этого весь перебор моделей не тянем
 const cooldown = {}; // ключ «провайдер:модель» -> до какого времени она «отдыхает»
+let rr = 0; // счётчик для кругового выбора ключа
 const fails = {}; // ключ -> подряд ошибок (пауза растёт: 1, 2, 4, 8, 10 мин)
 const calls = []; // ts вызовов за последнюю минуту
 
@@ -42,16 +43,21 @@ async function post(url, headers, body) {
 
 const providers = {
   gemini: {
-    enabled: () => Boolean(config.geminiKey),
-    models: (tier) => (tier === 'smart' ? [...config.geminiSmartModels, ...config.geminiModels] : config.geminiModels),
+    enabled: () => config.geminiKeys.length > 0,
+    // для каждой модели — все ключи, начиная с очередного по кругу (нагрузка делится между аккаунтами)
+    variants: (tier, offset) => {
+      const models = tier === 'smart' ? [...config.geminiSmartModels, ...config.geminiModels] : config.geminiModels;
+      const keys = config.geminiKeys;
+      return models.flatMap((model) => keys.map((_, i) => ({ model, apiKey: keys[(offset + i) % keys.length] })));
+    },
     supportsMedia: true,
-    async call({ system, prompt, maxTokens, temperature, model, json, media }) {
+    async call({ system, prompt, maxTokens, temperature, model, json, media, apiKey }) {
       const generationConfig = { maxOutputTokens: maxTokens, temperature };
       if (json) generationConfig.responseMimeType = 'application/json';
       const send = (gc) =>
         post(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-          { 'x-goog-api-key': config.geminiKey },
+          { 'x-goog-api-key': apiKey },
           {
             systemInstruction: { parts: [{ text: system }] },
             contents: [
@@ -78,11 +84,11 @@ const providers = {
   },
   grok: {
     enabled: () => Boolean(config.grokKey),
-    models: () => [config.grokModel],
-    async call({ system, prompt, maxTokens, temperature, model }) {
+    variants: () => [{ model: config.grokModel, apiKey: config.grokKey }],
+    async call({ system, prompt, maxTokens, temperature, model, apiKey }) {
       const data = await post(
         'https://api.x.ai/v1/chat/completions',
-        { authorization: `Bearer ${config.grokKey}` },
+        { authorization: `Bearer ${apiKey}` },
         {
           model,
           max_tokens: maxTokens,
@@ -102,7 +108,9 @@ function rateOk(high) {
   const now = Date.now();
   while (calls.length && now - calls[0] > 60_000) calls.shift();
   // часть лимита зарезервирована под прямые обращения к боту
-  const limit = high ? config.aiRpm : Math.max(1, Math.floor(config.aiRpm * 0.6));
+  // у каждого ключа Gemini своя квота, поэтому общий лимит растёт с их числом
+  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length);
+  const limit = high ? rpm : Math.max(1, Math.floor(rpm * 0.6));
   return calls.length < limit;
 }
 
@@ -117,18 +125,18 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     return null;
   }
   const names = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
+  const offset = rr++;
   const seen = new Set();
   const candidates = names
-    .flatMap((name) => providers[name].models(tier).map((model) => ({ name, model })))
-    .filter((c) => !seen.has(`${c.name}:${c.model}`) && seen.add(`${c.name}:${c.model}`));
+    .flatMap((name) => providers[name].variants(tier, offset).map((v) => ({ name, ...v, id: `${name}:${v.model}:…${String(v.apiKey).slice(-4)}` })))
+    .filter((c) => !seen.has(c.id) && seen.add(c.id));
   const started = Date.now();
-  for (const { name, model } of candidates) {
-    const key = `${name}:${model}`;
+  for (const { name, model, apiKey, id: key } of candidates) {
     if ((cooldown[key] || 0) > Date.now()) continue;
     if (Date.now() - started > TOTAL_BUDGET_MS) break;
     calls.push(Date.now());
     try {
-      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json, media })).trim();
+      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json, media, apiKey })).trim();
       if (text) {
         fails[key] = 0;
         return { text, provider: key };
