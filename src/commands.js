@@ -6,6 +6,7 @@ import { chat, dayKey, save } from './store.js';
 import { app, say, roast } from './respond.js';
 import { LEVELS } from './filter.js';
 import { emptyMemory } from './memory.js';
+import { lifeStatus } from './life.js';
 
 export const parseCommand = (text) => {
   const m = text.match(/^\/([\p{L}0-9_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/u);
@@ -114,7 +115,7 @@ async function exec(ctx, key, cmd, message) {
     case 'life': {
       if (/^(вкл|on|да)/i.test(cmd.args)) st.settings.autonomy = true;
       else if (/^(выкл|off|нет)/i.test(cmd.args)) st.settings.autonomy = false;
-      else return void (await reply(`Своя жизнь: ${st.settings.autonomy === false ? 'выкл' : 'вкл'}. /жизнь вкл|выкл`));
+      else return void (await reply(st.settings.autonomy === false ? 'Своя жизнь выключена. Включить: /жизнь вкл' : `Своя жизнь включена. ${lifeStatus(st)}`));
       save();
       await reply(st.settings.autonomy ? 'Живу своей жизнью: могу и поздороваться, и позвать кого-нибудь.' : 'Хорошо, сам заговаривать не буду. Только если позовут.');
       break;

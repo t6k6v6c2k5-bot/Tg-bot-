@@ -6,7 +6,8 @@ import { app, respond, react } from './respond.js';
 import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
 import { watchQuestion } from './scheduler.js';
 import { learn } from './memory.js';
-import { onHumanMessage } from './life.js';
+import { onHumanMessage, noteHour } from './life.js';
+import { hourOf } from './store.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -37,8 +38,10 @@ export async function createBot() {
       ts: Date.now(),
     });
 
-    onHumanMessage(st);
     const now = Date.now();
+    const replyToBot = msg.reply_to_message?.from?.id === app.id;
+    onHumanMessage(st, now, replyToBot);
+    noteHour(st, hourOf(now));
     const isPrivate = ctx.chat.type === 'private';
     const direct =
       isPrivate ||
@@ -46,7 +49,7 @@ export async function createBot() {
         text,
         botUsername: app.username,
         aliases: config.aliases,
-        replyToBot: msg.reply_to_message?.from?.id === app.id,
+        replyToBot,
       });
 
     // Обучение «блокнота»: раз в ~25 сообщений, не чаще раза в 10 минут

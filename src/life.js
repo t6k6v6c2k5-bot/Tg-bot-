@@ -11,10 +11,75 @@ import { sendRevive } from './commands.js';
 // здоровается утром и травит байки. Всё в рамках предохранителей.
 
 const H = 3600_000;
+// Потолок инициатив в сутки по уровню /активность; реальный бюджет — от 40% до 100% потолка
+// в зависимости от того, как чат реагирует на Батю (см. dailyCap).
+export const CEILING = { 1: 0, 2: 3, 3: 6, 4: 8, 5: 10 };
+// Резервные пороги тишины, пока в чате мало истории
 export const SILENCE_MS = { 2: 4 * H, 3: 2 * H, 4: 1.5 * H, 5: 0.75 * H };
-export const DAILY_CAP = { 1: 0, 2: 2, 3: 4, 4: 6, 5: 10 };
-const MIN_GAP_MS = 45 * 60_000;
+const SILENCE_SCALE = { 2: 1.6, 3: 1, 4: 0.75, 5: 0.5 };
 const POKE_PER_PERSON_MS = 24 * H;
+const KINDS = ['revive', 'poke', 'tale'];
+
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+// ---- обучение на реакции чата ----
+// score: 1 — ответили Бате, 0.8 — быстро заговорили, 0.2 — заметили поздно, 0 — игнор
+export function recordOutcome(st, kind, score) {
+  const a = 0.3;
+  st.engage = st.engage == null ? 0.5 * (1 - a) + score * a : st.engage * (1 - a) + score * a;
+  st.kindStats ||= {};
+  const k = (st.kindStats[kind] ||= { n: 0, ema: 0.5 });
+  k.ema = k.ema * (1 - a) + score * a;
+  k.n++;
+}
+
+export const engagement = (st) => st.engage ?? 0.5;
+
+// Сколько инициатив Батя позволяет себе за сутки: 4 при глухом чате, 10 при отзывчивом (на уровне 5)
+export function dailyCap(st) {
+  const ceil = CEILING[st.settings.activity] ?? 0;
+  if (!ceil) return 0;
+  return Math.max(1, Math.round(ceil * clamp(0.4 + engagement(st), 0.4, 1)));
+}
+
+// ---- «когда в этом чате вообще живут» ----
+const histTotal = (st) => (st.hourHist || []).reduce((a, b) => a + b, 0);
+const HIST_MIN = 150;
+
+export function noteHour(st, hour) {
+  const h = (st.hourHist ||= Array(24).fill(0));
+  h[hour]++;
+  if (histTotal(st) > 3000) st.hourHist = h.map((x) => Math.floor(x / 2)); // старое постепенно забывается
+}
+
+export function isAwake(st, hour) {
+  if (histTotal(st) < HIST_MIN) return !isQuietHour(hour);
+  return st.hourHist[hour] >= 0.08 * Math.max(...st.hourHist);
+}
+
+// Во сколько в этом чате начинается день (для приветствия)
+export function wakeHourFor(st) {
+  if (histTotal(st) < HIST_MIN) return config.wakeHour;
+  const max = Math.max(...st.hourHist);
+  for (let h = 5; h < 14; h++) if (st.hourHist[h] >= 0.2 * max) return h;
+  return config.wakeHour;
+}
+
+// Какая тишина для ЭТОГО чата необычна: ~4 типичных паузы между сообщениями
+export function silenceThreshold(st) {
+  const gaps = [];
+  let prev = null;
+  for (const m of st.history) {
+    if (m.bot) continue;
+    if (prev && m.ts - prev < 6 * H) gaps.push(m.ts - prev);
+    prev = m.ts;
+  }
+  const level = st.settings.activity;
+  if (gaps.length < 30) return SILENCE_MS[level] ?? 2 * H;
+  gaps.sort((x, y) => x - y);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  return clamp(median * 4 * (SILENCE_SCALE[level] ?? 1), 30 * 60_000, 5 * H);
+}
 
 export function isQuietHour(hour, from = config.quietFrom, to = config.quietTo) {
   return from <= to ? hour >= from && hour < to : hour >= from || hour < to;
@@ -49,39 +114,45 @@ export function pickPokeTarget(st, now, rng = Math.random) {
 export function pickInitiative(st, now, { hour, today, rng = Math.random }) {
   const s = st.settings;
   if (s.autonomy === false || s.mutedUntil > now) return null;
-  if (isQuietHour(hour)) return null;
-  const cap = DAILY_CAP[s.activity] ?? 0;
+  if (!isAwake(st, hour)) return null;
+  const cap = dailyCap(st);
   st.initLog = (st.initLog || []).filter((t) => now - t < 24 * H);
   if (!cap || st.initLog.length >= cap) return null;
   if ((st.ignored || 0) >= 2) return null; // чат дважды проигнорировал — ждём, пока кто-то заговорит
-  if (now - Math.max(st.lastInitAt || 0, st.initTryAt || 0) < MIN_GAP_MS) return null;
+  // после удачной инициативы можно скорее, после проигнорированной — подождать
+  const gap = (st.ignored || 0) >= 1 ? 90 * 60_000 : engagement(st) > 0.6 ? 30 * 60_000 : 45 * 60_000;
+  if (now - Math.max(st.lastInitAt || 0, st.initTryAt || 0) < gap) return null;
   if (isSerious(st.history)) return null;
 
   const human = lastHumanTs(st);
   if (!human || now - human > 3 * 24 * H || st.history.length < 15) return null; // чат неживой
   if (rng() > 0.25) return null; // джиттер: не в первую же минуту
 
-  if (hour >= config.wakeHour && hour < config.wakeHour + 2 && st.lastGreetDay !== today && now - human < 2 * 24 * H) return 'greeting';
+  const wake = wakeHourFor(st);
+  if (hour >= wake && hour < wake + 2 && st.lastGreetDay !== today && now - human < 2 * 24 * H) return 'greeting';
 
-  if (now - human < (SILENCE_MS[s.activity] ?? 2 * H)) return null; // ещё болтают
+  if (now - human < silenceThreshold(st)) return null; // ещё болтают или тишина обычная
 
   const options = [];
-  if (now - (st.lastReviveAt || 0) > 5 * H) options.push(['revive', 3]);
-  if (pickPokeTarget(st, now, () => 0)) options.push(['poke', 3]);
-  if (now - (st.lastTaleAt || 0) > 20 * H) options.push(['tale', 1]);
+  if (now - (st.lastReviveAt || 0) > 5 * H) options.push('revive');
+  if (pickPokeTarget(st, now, () => 0)) options.push('poke');
+  if (now - (st.lastTaleAt || 0) > 20 * H) options.push('tale');
   if (!options.length) return null;
-  let r = rng() * options.reduce((a, [, w]) => a + w, 0);
-  for (const [k, w] of options) if ((r -= w) < 0) return k;
-  return options[0][0];
+  // чаще то, на что в этом чате откликаются
+  const weight = (k) => (k === 'tale' ? 1 : 3) * (0.5 + (st.kindStats?.[k]?.ema ?? 0.5));
+  let r = rng() * options.reduce((a, k) => a + weight(k), 0);
+  for (const k of options) if ((r -= weight(k)) < 0) return k;
+  return options[0];
 }
 
-async function speak(chatId, st, text) {
+async function speak(chatId, st, text, kind) {
   const sent = await say(chatId, st, text);
   const now = Date.now();
   st.initLog = [...(st.initLog || []), now];
   st.lastInitAt = now;
   st.lastUnsolAt = now;
   st.initOpen = true;
+  st.initKind = kind;
   return sent;
 }
 
@@ -99,6 +170,7 @@ export async function runInitiative(chatId, st, kind, today) {
       st.lastInitAt = now;
       st.lastUnsolAt = now;
       st.initOpen = true;
+      st.initKind = 'revive';
     } else st.lastReviveAt = now;
     return;
   }
@@ -107,7 +179,7 @@ export async function runInitiative(chatId, st, kind, today) {
     st.lastGreetDay = today;
     const res = await ask(st, greetingPrompt(st.history), 120);
     const r = res && parseReply(res.text);
-    if (r?.type === 'text') await speak(chatId, st, r.text);
+    if (r?.type === 'text') await speak(chatId, st, r.text, 'greeting');
     return;
   }
 
@@ -115,7 +187,7 @@ export async function runInitiative(chatId, st, kind, today) {
     st.lastTaleAt = now;
     const res = await ask(st, talePrompt(st.history), 220);
     const r = res && parseReply(res.text, { maxLines: 4, maxChars: 500 });
-    if (r?.type === 'text') await speak(chatId, st, r.text);
+    if (r?.type === 'text') await speak(chatId, st, r.text, 'tale');
     return;
   }
 
@@ -134,13 +206,17 @@ export async function runInitiative(chatId, st, kind, today) {
     if (r?.type !== 'text') return;
     // чтобы человеку пришло уведомление, обращение по @нику должно быть в тексте
     const text = handle && !r.text.toLowerCase().includes(handle.toLowerCase()) ? `${handle}, ${r.text}` : r.text;
-    await speak(chatId, st, text);
+    await speak(chatId, st, text, 'poke');
   }
 }
 
-// Любое сообщение человека гасит режим «меня проигнорировали»
-export function onHumanMessage(st) {
-  st.initOpen = false;
+// Человек написал: учимся, откликнулись ли на последнюю инициативу
+export function onHumanMessage(st, now = Date.now(), replyToBot = false) {
+  if (st.initOpen) {
+    const fast = now - (st.lastInitAt || 0) < 30 * 60_000;
+    recordOutcome(st, st.initKind || 'revive', replyToBot ? 1 : fast ? 0.8 : 0.2);
+    st.initOpen = false;
+  }
   st.ignored = 0;
 }
 
@@ -149,6 +225,12 @@ export function trackIgnore(st, now) {
   if (st.initOpen && now - (st.lastInitAt || 0) > 2 * H) {
     st.initOpen = false;
     st.ignored = (st.ignored || 0) + 1;
-    console.log(`[life] инициатива без реакции, подряд: ${st.ignored}`);
+    recordOutcome(st, st.initKind || 'revive', 0);
+    console.log(`[life] инициатива без реакции, подряд: ${st.ignored}; отзывчивость ${engagement(st).toFixed(2)}, бюджет ${dailyCap(st)}/сут`);
   }
+}
+
+export function lifeStatus(st) {
+  const left = Math.max(0, dailyCap(st) - (st.initLog || []).filter((t) => Date.now() - t < 24 * H).length);
+  return `Сейчас могу написать сам ещё до ${left} раз за ближайшие сутки (бюджет ${dailyCap(st)}: чат отзывается на меня на ${Math.round(engagement(st) * 100)}%). Тишина, после которой я заговорю: ~${Math.round(silenceThreshold(st) / 60_000)} мин.`;
 }

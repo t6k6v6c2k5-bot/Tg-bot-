@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickInitiative, isQuietHour, pickPokeTarget, trackIgnore, onHumanMessage } from '../src/life.js';
+import { pickInitiative, isQuietHour, pickPokeTarget, trackIgnore, onHumanMessage, dailyCap, recordOutcome, silenceThreshold, isAwake, wakeHourFor, noteHour } from '../src/life.js';
 import { parseReply } from '../src/parse.js';
 
 const H = 3600_000;
@@ -42,7 +42,9 @@ test('режим тишины, выключенная «жизнь», актив
 });
 
 test('суточный лимит и пауза между инициативами', () => {
-  assert.equal(pickInitiative(mk({ initLog: [NOW - 3 * H, NOW - 4 * H, NOW - 5 * H, NOW - 6 * H] }), NOW, opt), null); // cap=4
+  const cap = dailyCap(mk());
+  const log = Array.from({ length: cap }, (_, i) => NOW - (i + 1) * H);
+  assert.equal(pickInitiative(mk({ initLog: log }), NOW, opt), null);
   assert.equal(pickInitiative(mk({ lastInitAt: NOW - 20 * 60_000 }), NOW, opt), null);
 });
 
@@ -58,6 +60,7 @@ test('игнор считается через 2 часа без реакции'
   trackIgnore(st, NOW);
   assert.equal(st.ignored, 1);
   assert.equal(st.initOpen, false);
+  assert.ok(st.engage < 0.5); // игнор снижает отзывчивость
 });
 
 test('утреннее приветствие раз в день', () => {
@@ -88,4 +91,43 @@ test('длинные ответы только по запросу', () => {
   const long = 'a\nb\nc\nd\ne\nf\ng';
   assert.equal(parseReply(long).text.split('\n').length, 2);
   assert.equal(parseReply(long, { maxLines: 5, maxChars: 700 }).text.split('\n').length, 5);
+});
+
+test('бюджет сам растёт от отклика чата и падает от игнора (уровень 5: 10 ↔ 4)', () => {
+  const lively = mk({ settings: { activity: 5, tone: 'soft', mutedUntil: 0, autonomy: true } });
+  for (let i = 0; i < 12; i++) recordOutcome(lively, 'revive', 1);
+  assert.equal(dailyCap(lively), 10);
+  const dead = mk({ settings: { activity: 5, tone: 'soft', mutedUntil: 0, autonomy: true } });
+  for (let i = 0; i < 12; i++) recordOutcome(dead, 'revive', 0);
+  assert.equal(dailyCap(dead), 4);
+  assert.ok(dailyCap(mk()) > 4 && dailyCap(mk()) < 10 || dailyCap(mk()) === 5); // по умолчанию — середина
+});
+
+test('отклик на инициативу засчитывается: быстрый ответ Бате лучше позднего', () => {
+  const a = mk({ initOpen: true, lastInitAt: NOW - 5 * 60_000, initKind: 'poke' });
+  onHumanMessage(a, NOW, true);
+  const b = mk({ initOpen: true, lastInitAt: NOW - 90 * 60_000, initKind: 'poke' });
+  onHumanMessage(b, NOW, false);
+  assert.ok(a.kindStats.poke.ema > b.kindStats.poke.ema);
+  assert.equal(a.initOpen, false);
+});
+
+test('порог тишины учится на ритме чата', () => {
+  const fast = mk();
+  fast.history = Array.from({ length: 60 }, (_, i) => ({ uid: 1, name: 'a', text: 'x', ts: NOW - (60 - i) * 60_000 })); // сообщение в минуту
+  const slow = mk();
+  slow.history = Array.from({ length: 60 }, (_, i) => ({ uid: 1, name: 'a', text: 'x', ts: NOW - (60 - i) * 30 * 60_000 })); // раз в полчаса
+  assert.ok(silenceThreshold(fast) < silenceThreshold(slow));
+  assert.ok(silenceThreshold(fast) >= 30 * 60_000);
+});
+
+test('часы активности чата выучиваются, приветствие — когда там просыпаются', () => {
+  const st = mk();
+  assert.equal(isAwake(st, 3), false); // по умолчанию ночь
+  for (let i = 0; i < 400; i++) { noteHour(st, 11 + (i % 10)); } // чат живёт с 11 до 20
+  noteHour(st, 3); // единичное ночное сообщение не делает ночь «активной»
+  assert.equal(isAwake(st, 3), false);
+  assert.equal(isAwake(st, 15), true);
+  assert.equal(isAwake(st, 9), false); // здесь утром никто не пишет, значит и Батя не лезет
+  assert.equal(wakeHourFor(st), 11);
 });

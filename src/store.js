@@ -30,6 +30,10 @@ const fresh = () => ({
   ignored: 0, // сколько инициатив подряд остались без реакции
   lastGreetDay: '',
   lastTaleAt: 0,
+  initKind: '',
+  engage: null, // «отзывчивость» чата на инициативы, 0..1
+  kindStats: {}, // вид инициативы -> {n, ema}
+  hourHist: Array(24).fill(0), // сообщений по часам суток
   pokeLast: {}, // uid -> когда последний раз звали по имени
   sinceLearn: 0, // сообщений с последнего «обучения»
   lastLearnAt: 0,
