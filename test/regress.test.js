@@ -121,3 +121,17 @@ test('в аналитическом вопросе модель получает
   assert.ok(seen.length >= 1);
   assert.ok(seen.every((t) => /ДАННЫЕ ЧАТА/.test(t) && /Ваня/.test(t)), 'каждый запрос к модели содержит досье');
 });
+
+test('в личке один на один затянувшийся обмен НЕ глушит бота (ограничение только для групп)', async () => {
+  const botReplies = Array.from({ length: 6 }, (_, i) => ({ id: 10 + i * 2, uid: 99, name: 'Батя', text: `реплика ${i}`, ts: Date.now() - (12 - i * 2) * 1000, bot: true }));
+  const human = (id, t) => ({ id, uid: 1, name: 'Влад', text: t, ts: Date.now() });
+  const mk = (q) => mkst(q, { history: [...botReplies.flatMap((b, i) => [{ id: b.id - 1, uid: 1, name: 'Влад', text: `вопрос ${i}`, ts: b.ts - 500 }, b]), human(99, q)] });
+  globalThis.fetch = async () => reply('1) Отвечаю как обычно\nЛУЧШИЙ: 1');
+  sent.length = 0;
+  await respond(1234564799, mk('ну и как дела?'), { mode: 'direct', replyTo: 99 }); // личка (id > 0)
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Отвечаю как обычно/);
+  sent.length = 0;
+  await respond(-5555, mk('ну и как дела?'), { mode: 'direct', replyTo: 99 }); // группа: после 5 реплик только реакция
+  assert.equal(sent.length, 0);
+});

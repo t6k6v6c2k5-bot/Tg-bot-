@@ -84,7 +84,8 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const abusive = direct && !serious && isAbuse(lastText);
     const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';
     // Затянувшийся обмен с одним человеком: сначала ставим точку одной фразой, потом просто не продолжаем
-    const chain = direct ? exchangeLength(st) : 0;
+    // ограничение нужно против троллей в группах; в личке один на один бот отвечает всегда
+    const chain = direct && chatId < 0 ? exchangeLength(st) : 0;
     if (chain >= 5) {  // после фразы-точки просто не продолжаем
       console.log(`[${mode}] обмен затянулся (${chain}), только реакция`);
       if (replyTo && (await react(chatId, replyTo, '🤝'))) return true;
