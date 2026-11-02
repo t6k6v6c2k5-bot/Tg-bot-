@@ -4,7 +4,7 @@ const num = (k, d) => (env[k] !== undefined && env[k] !== '' ? Number(env[k]) : 
 export const config = {
   botToken: env.BOT_TOKEN,
   geminiKey: env.GEMINI_API_KEY,
-  geminiModel: env.GEMINI_MODEL || 'gemini-2.5-flash',
+  geminiModel: env.GEMINI_MODEL || 'gemini-3.8-flash',
   grokKey: env.GROK_API_KEY,
   grokModel: env.GROK_MODEL || 'grok-4-fast',
   aliases: (env.BOT_ALIASES || 'бот')
