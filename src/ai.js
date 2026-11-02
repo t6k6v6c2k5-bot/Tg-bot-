@@ -2,9 +2,10 @@ import { config } from './config.js';
 
 // Gemini — основной мозг, Grok — подколы. Если один упёрся в лимит, берём другой; если оба — молчим.
 
-const TIMEOUT_MS = 12_000;
+const TIMEOUT_MS = 9_000;
 const TOTAL_BUDGET_MS = 30_000; // дольше этого весь перебор моделей не тянем
-const cooldown = {}; // ключ «провайдер:модель» -> до какого времени она «отдыхает»
+// Паузы двух видов: «k:…» — проблема ключа (квота 429, неверный ключ), «m:…» — проблема модели (таймаут, 5xx, нет такой модели)
+const cooldown = {};
 let rr = 0; // счётчик для кругового выбора ключа
 const fails = {}; // ключ -> подряд ошибок (пауза растёт: 1, 2, 4, 8, 10 мин)
 const calls = []; // ts вызовов за последнюю минуту
@@ -131,23 +132,27 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     .flatMap((name) => providers[name].variants(tier, offset).map((v) => ({ name, ...v, id: `${name}:${v.model}:…${String(v.apiKey).slice(-4)}` })))
     .filter((c) => !seen.has(c.id) && seen.add(c.id));
   const started = Date.now();
-  for (const { name, model, apiKey, id: key } of candidates) {
-    if ((cooldown[key] || 0) > Date.now()) continue;
+  for (const { name, model, apiKey, id } of candidates) {
+    const mk = `m:${name}:${model}`; // модель перегружена — на всех ключах сразу
+    const kk = `k:${id}`; // квота именно этого ключа на этой модели
+    if ((cooldown[mk] || 0) > Date.now() || (cooldown[kk] || 0) > Date.now()) continue;
     if (Date.now() - started > TOTAL_BUDGET_MS) break;
     calls.push(Date.now());
     try {
       const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json, media, apiKey })).trim();
       if (text) {
-        fails[key] = 0;
-        return { text, provider: key };
+        fails[mk] = fails[kk] = 0;
+        return { text, provider: id };
       }
-      console.log(`[ai] ${key}: пустой ответ`);
+      console.log(`[ai] ${id}: пустой ответ`);
     } catch (e) {
+      const keyProblem = e.status === 429 || e.status === 401 || e.status === 403 || (e.status === 400 && /api key/i.test(e.message));
+      const bucket = keyProblem ? kk : mk;
+      fails[bucket] = (fails[bucket] || 0) + 1;
       const transient = e.status === 429 || e.status >= 500 || e.status === 0;
-      fails[key] = (fails[key] || 0) + 1;
       const base = transient ? e.retryAfterMs || 60_000 : 10 * 60_000;
-      cooldown[key] = Date.now() + Math.min(10 * 60_000, base * 2 ** (fails[key] - 1));
-      console.warn(`[ai] ${key} упал (${e.message.replace(/\s+/g, ' ').slice(0, 120)}); подряд ${fails[key]}, пауза до ${new Date(cooldown[key]).toISOString()}`);
+      cooldown[bucket] = Date.now() + Math.min(10 * 60_000, base * 2 ** (fails[bucket] - 1));
+      console.warn(`[ai] ${id} упал (${e.message.replace(/\s+/g, ' ').slice(0, 110)}); ${keyProblem ? 'ключ' : 'модель'}, подряд ${fails[bucket]}, пауза до ${new Date(cooldown[bucket]).toISOString()}`);
     }
   }
   return null;

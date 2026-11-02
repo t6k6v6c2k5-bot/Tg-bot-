@@ -56,3 +56,20 @@ test('в логах и результате ключ не светится це�
   const r = await generate({ system: 's', prompt: 'p', high: true });
   assert.ok(r && !r.provider.includes('key-'));
 });
+
+test('таймаут/503 — проблема модели: остальные ключи этой модели не дёргаем, идём к следующей модели', async () => {
+  const hits = [];
+  globalThis.fetch = async (url, opts) => {
+    const model = url.split('/models/')[1].split(':')[0];
+    hits.push(`${model}|${opts.headers['x-goog-api-key']}`);
+    return model === 'bad-model' ? new Response('overloaded', { status: 503 }) : ok();
+  };
+  // сбросим паузы прошлых тестов: подождать нельзя, поэтому проверяем по числу обращений к bad-model в этой серии
+  const before = hits.length;
+  await generate({ system: 's', prompt: 'p', high: true });
+  const badNow = hits.slice(before).filter((h) => h.startsWith('bad-model'));
+  assert.ok(badNow.length <= 1, `к перегруженной модели ходили ${badNow.length} раз(а)`);
+  const again = hits.length;
+  await generate({ system: 's', prompt: 'p', high: true });
+  assert.equal(hits.slice(again).filter((h) => h.startsWith('bad-model')).length, 0); // на паузе у всех ключей
+});
