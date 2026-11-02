@@ -13,6 +13,8 @@ async function tick() {
   const today = dayKey(now);
   for (const [chatId, st] of allChats()) {
     if (chatId > 0) continue; // только группы
+    // бота выгнали: пока в чате не появится новое сообщение, туда не пишем
+    if (st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt) continue;
     try {
       trackIgnore(st, now);
       if (rosterDue(st, now)) await refreshRoster(chatId, st);
@@ -42,6 +44,7 @@ async function tick() {
       }
     } catch (e) {
       console.error('[scheduler]', chatId, e.message);
+      if (/\b403\b|chat not found|bot was kicked|bot was blocked/i.test(e.message)) st.kickedAt = Date.now();
     }
   }
 }
