@@ -10,6 +10,9 @@ export function parseReply(raw, { maxLines = 4, maxChars = config.maxReplyChars 
   let t = raw.trim().replace(/^["«“]+|["»”]+$/g, '').trim();
   t = t.replace(/^(?:Батя|Бот)\s*:\s*/i, ''); // некоторые модели начинают с «Батя:»
   if (!t || /^\W*SKIP\b/i.test(t)) return { type: 'skip' };
+  // отказ по несдвигаемым линиям: «REFUSE: короткая фраза в образе»
+  const ref = t.match(/^\W*REFUSE\b\s*[:\-–]?\s*(.*)$/is);
+  if (ref) return { type: 'refuse', text: ref[1].trim().split('\n')[0].slice(0, 200) };
   const r = t.match(/^REACT:\s*(\S+)/i);
   if (r) {
     const emoji = r[1].replace(/️/g, '');

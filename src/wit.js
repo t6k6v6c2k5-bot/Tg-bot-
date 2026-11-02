@@ -46,6 +46,7 @@ export async function bestOf({ system, prompt, context, direct, reject = () => f
   const res = await generate({ system, prompt: prompt + SUFFIX, maxTokens: maxTokens * 4 + 40, temperature: 1, tier, high });
   if (!res) return null;
   if (/^\W*SKIP\b/i.test(res.text.trim())) return { text: 'SKIP', provider: res.provider };
+  if (/^\W*REFUSE\b/i.test(res.text.trim())) return { text: res.text.trim(), provider: res.provider }; // отказ по несдвигаемым линиям
 
   const raw = parseCandidates(res.text);
   const selfPick = parseBest(res.text);

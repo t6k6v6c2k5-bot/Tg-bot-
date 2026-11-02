@@ -8,7 +8,7 @@ import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji, exchangeLength } from './variety.js';
 import { bestOf } from './wit.js';
 import { transcript } from './prompts.js';
-import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, pickLine } from './safety.js';
+import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
 
@@ -70,7 +70,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const endNote = chain >= 3 ? `\n\nВНИМАНИЕ: вы с этим человеком уже обменялись ${chain} репликами подряд. Заверши обмен ОДНОЙ короткой фразой-точкой с юмором. Формат REACT здесь запрещён, SKIP тоже: нужна именно текстовая реплика. Не разгоняй разговор дальше и не задавай встречных вопросов.` : '';
     const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock) + endNote;
     // Остроумие: без блока данных (аналитика, пересказы) — пишем варианты и выбираем лучший
-    const useWit = !dataBlock;
+    const useWit = !dataBlock && mode !== 'critic';
     const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
     const ask = (banned = []) =>
       useWit
@@ -127,15 +127,40 @@ export async function respond(chatId, st, { mode, replyTo }) {
         else if (!direct) return false; // сам вклиниваться с повтором не стоит
       }
     }
+    // Настоящий отказ по несдвигаемым линиям: бот сам формулирует короткую фразу
+    if (r.type === 'refuse') {
+      console.log(`[${mode}] REFUSE (${res.provider})`);
+      if (!direct || !replyTo) return false;
+      await say(chatId, st, r.text || pickLine(DECLINES), replyTo);
+      return true;
+    }
+    if (r.type === 'skip' && direct) {
+      // Человек обратился напрямую: молчать нельзя, и «не придумал» — не отказ.
+      // Пробуем ещё раз попроще (один вариант, без отбора шуток), потом честно говорим, что мысль не идёт.
+      console.log(`[${mode}] SKIP на прямое обращение (${res.provider}) — пробую попроще`);
+      const plain = await generate({
+        system: system(st, app.name, { long: true, angle }),
+        prompt: prompt + '\n\nОтветь по-простому и по делу, одной-двумя фразами, без отказа и без SKIP. Если просят что-то рассказать, расскажи короткую шутку или забавный факт.',
+        maxTokens: 220,
+        high: true,
+        tier: 'smart',
+      });
+      const rp = plain ? parseReply(plain.text, popts) : { type: 'skip' };
+      if (rp.type === 'text') r = rp;
+      else if (rp.type === 'refuse') {
+        if (replyTo) await say(chatId, st, rp.text || pickLine(DECLINES), replyTo);
+        return true;
+      } else {
+        if (replyTo && Date.now() - (st.lastDeclineAt || 0) > 60_000) {
+          st.lastDeclineAt = Date.now();
+          await say(chatId, st, pickLine(NO_IDEAS), replyTo);
+          return true;
+        }
+        return false;
+      }
+    }
     if (r.type === 'skip') {
       console.log(`[${mode}] SKIP (${res.provider})`);
-      const q = st.history[st.history.length - 1]?.text || '';
-      // человек спросил напрямую — молчание выглядит как поломка; коротко отказываемся
-      if (direct && replyTo && q.length > 12 && Date.now() - (st.lastDeclineAt || 0) > 60_000) {
-        st.lastDeclineAt = Date.now();
-        await say(chatId, st, pickLine(DECLINES), replyTo);
-        return true;
-      }
       return false;
     }
     const now = Date.now();
