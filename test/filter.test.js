@@ -62,3 +62,12 @@ test('разбор ответа ИИ', () => {
   assert.equal(parseReply('a\nb\nc').text, 'a\nb');
   assert.ok(parseReply('x'.repeat(1000)).text.length <= 280);
 });
+
+test('политику и войну сам не поднимает, но на прямой вопрос отвечает', () => {
+  const pol = mk({ history: [{ text: 'а я считаю, что Крым наш', name: 'a' }] });
+  assert.ok(!canSpeakUnsolicited(pol, NOW));
+  assert.equal(decide({ direct: false, text: 'про войну', st: pol, now: NOW, rng: () => 0 }), null);
+  assert.equal(cheapReaction({ text: 'ахахах', st: pol, now: NOW, rng: () => 0 }), null);
+  assert.equal(decide({ direct: true, text: 'батя, чей Крым?', st: pol, now: NOW }), 'direct');
+  assert.ok(canSpeakUnsolicited(mk({ history: [{ text: 'выбор пиццы сложный', name: 'a' }] }), NOW)); // «выбор» не политика
+});
