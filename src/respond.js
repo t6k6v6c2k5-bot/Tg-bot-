@@ -5,7 +5,7 @@ import { system, chatPrompt, roastPrompt } from './prompts.js';
 import { remember } from './store.js';
 import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
-import { pickAngle, repetition, trimEmoji } from './variety.js';
+import { pickAngle, repetition, trimEmoji, exchangeLength } from './variety.js';
 import { bestOf } from './wit.js';
 import { transcript } from './prompts.js';
 import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, pickLine } from './safety.js';
@@ -60,7 +60,15 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const angle = pickAngle(st);
     const lastText = st.history[st.history.length - 1]?.text || '';
     const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';
-    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock);
+    // Затянувшийся обмен с одним человеком: сначала ставим точку одной фразой, потом просто не продолжаем
+    const chain = direct ? exchangeLength(st) : 0;
+    if (chain >= 5) {  // после фразы-точки просто не продолжаем
+      console.log(`[${mode}] обмен затянулся (${chain}), только реакция`);
+      if (replyTo && (await react(chatId, replyTo, '🤝'))) return true;
+      return false;
+    }
+    const endNote = chain >= 3 ? `\n\nВНИМАНИЕ: вы с этим человеком уже обменялись ${chain} репликами подряд. Заверши обмен ОДНОЙ короткой фразой-точкой с юмором. Формат REACT здесь запрещён, SKIP тоже: нужна именно текстовая реплика. Не разгоняй разговор дальше и не задавай встречных вопросов.` : '';
+    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock) + endNote;
     // Остроумие: без блока данных (аналитика, пересказы) — пишем варианты и выбираем лучший
     const useWit = !dataBlock;
     const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
@@ -95,6 +103,11 @@ export async function respond(chatId, st, { mode, replyTo }) {
       return false;
     }
     let r = parseReply(res.text, popts);
+    if (chain >= 3 && r.type === 'react') {
+      const again = await ask(['реакция вместо текста: здесь нужна короткая текстовая фраза-точка']);
+      const ra = again ? parseReply(again.text, popts) : r;
+      if (ra.type === 'text') r = ra;
+    }
     console.log(`[${mode}] ${res.provider} -> ${r.type} (${angle.id})${res.weak ? ' [редактор: всё слабо]' : ''}${res.pick ? ` [выбран ${res.pick}]` : ''}`);
     if (r.type === 'text' && bodyJokeAboutPerson(r.text, st)) {
       console.log(`[${mode}] шутка про тело/интим участника — перегенерирую`);

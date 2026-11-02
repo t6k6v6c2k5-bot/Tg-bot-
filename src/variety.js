@@ -77,3 +77,21 @@ export function styleBlock(st, angle, banned = []) {
   if (disliked.length) lines.push(`Что НЕ зашло (так не шути):\n${pick(disliked, 3).map((x) => '- ' + x.t).join('\n')}`);
   return lines.join('\n');
 }
+
+/**
+ * Сколько реплик бота подряд ушло одному и тому же человеку (за последние 10 минут).
+ * Нужен, чтобы не тянуть бесконечную перепалку, особенно с тем, кто троллит.
+ */
+export function exchangeLength(st, now = Date.now()) {
+  const h = st.history;
+  let uid = null;
+  let n = 0;
+  for (let i = h.length - 1; i >= 0; i--) {
+    const m = h[i];
+    if (now - m.ts > 10 * 60_000) break;
+    if (m.bot) n++;
+    else if (uid == null) uid = String(m.uid);
+    else if (String(m.uid) !== uid) break;
+  }
+  return n;
+}

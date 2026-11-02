@@ -143,3 +143,22 @@ test('критика распознаётся: «набор слов», «бре
   assert.equal(recordFeedback(st, { text: 'Набор слов', reply_to_message: { message_id: 7 } }, 102), 'disliked');
   assert.match(st.taste.disliked[0].t, /капитан/);
 });
+
+test('«понос выражений» и подобное — тоже критика', async () => {
+  const { isCriticism } = await import('../src/taste.js');
+  for (const t of ['Тупо понос выражений', 'словесный понос', 'это пустословие', 'пустая болтовня', 'несвязно как-то', 'ни о чём']) assert.ok(isCriticism(t), t);
+  assert.ok(!isCriticism('Точно как дед'));
+});
+
+test('длина обмена: считаем реплики бота подряд одному человеку, чужого не смешиваем', async () => {
+  const { exchangeLength } = await import('../src/variety.js');
+  const T = Date.now();
+  const st = mk({ history: [] });
+  const add = (uid, bot, ago) => st.history.push(msg(uid, bot ? 'Батя' : 'Руслан', 'x', T - ago * 1000, bot ? { bot: true } : {}));
+  add(1, false, 300); add(0, true, 280); add(1, false, 200); add(0, true, 180); add(1, false, 100); add(0, true, 80); add(1, false, 10);
+  assert.equal(exchangeLength(st, T), 3);
+  const other = mk({ history: [msg(2, 'Маша', 'x', T - 400_000), msg(0, 'Батя', 'x', T - 390_000, { bot: true }), msg(1, 'Руслан', 'x', T - 5_000)] });
+  assert.equal(exchangeLength(other, T), 1); // реплика Маше — другой обмен, но подряд идущая реплика бота считается
+  const old = mk({ history: [msg(1, 'Руслан', 'x', T - 3_600_000), msg(0, 'Батя', 'x', T - 3_590_000, { bot: true }), msg(1, 'Руслан', 'x', T - 1_000)] });
+  assert.equal(exchangeLength(old, T), 0); // час назад — не в счёт
+});
