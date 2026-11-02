@@ -82,6 +82,9 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const serious = direct && wantsSerious(lastText);
     // тролль ругается на бота: отвечаем, только если вышло остро; слабое лучше промолчать
     const abusive = direct && !serious && isAbuse(lastText);
+    // «Умная» модель (20 запросов в сутки на проект на бесплатном тарифе!) — только для вопросов, где она нужна:
+    // аналитика по чату и просьбы объяснить/посоветовать/рассказать по делу; болтовня идёт на быстрых моделях
+    const needSmart = direct && (/(?<!\p{L})(?:объясни|расскажи\s+(?:про|о|как|что|подробн\p{L}*)|почему|зачем|как\s+(?:работает|сделать|правильно|лучше)|что\s+такое|посоветуй|помоги|сравни|разбер\p{L}*|проанализируй|в\s+чём\s+разница)/iu.test(lastText) || analysisContext(st, lastText) !== '');
     const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';
     // Затянувшийся обмен с одним человеком: сначала ставим точку одной фразой, потом просто не продолжаем
     // ограничение нужно против троллей в группах; в личке один на один бот отвечает всегда
@@ -105,7 +108,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
             context: transcript(st.history, 8),
             direct: direct && !abusive,
             reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0,
-            tier: direct ? 'smart' : 'fast',
+            tier: needSmart ? 'smart' : 'fast',
             high: direct,
             maxTokens: direct ? 160 : 70,
             parseOpts: popts,
@@ -115,7 +118,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
             prompt,
             maxTokens: direct ? 500 : 100,
             high: direct,
-            tier: direct ? 'smart' : 'fast',
+            tier: needSmart ? 'smart' : 'fast',
           });
     let res = await ask();
     if (!res) {

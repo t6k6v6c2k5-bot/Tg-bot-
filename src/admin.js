@@ -158,7 +158,7 @@ export function aiText(s) {
   ];
   if (s.pauses.length) {
     lines.push('', 'На паузе сейчас:');
-    for (const p of s.pauses.slice(0, 12)) lines.push(`• ${p.id.replace(/^[mk]:/, '')} — ещё ${p.seconds} с (подряд ошибок: ${p.fails})`);
+    for (const p of s.pauses.slice(0, 12)) lines.push(`• ${p.id.replace(/^[mk]:/, '')} — ещё ${p.seconds > 5400 ? `${(p.seconds / 3600).toFixed(1)} ч` : p.seconds > 120 ? `${Math.round(p.seconds / 60)} мин` : `${p.seconds} с`} (подряд ошибок: ${p.fails})`);
   } else lines.push('', 'Пауз нет: все модели доступны.');
   return lines.join('\n');
 }

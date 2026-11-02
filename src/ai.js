@@ -30,8 +30,10 @@ async function post(url, headers, body) {
     });
     if (!res.ok) {
       const ra = Number(res.headers.get('retry-after'));
-      const detail = (await res.text()).slice(0, 200);
-      throw new ProviderError(`HTTP ${res.status} ${detail}`, res.status, ra ? ra * 1000 : 0);
+      const full = await res.text();
+      // Google в теле 429 пишет RetryInfo: «повторить через 69990s» (суточная квота) — слушаемся, а не долбим каждые минуты
+      const rd = Number((full.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/) || [])[1]);
+      throw new ProviderError(`HTTP ${res.status} ${full.slice(0, 200)}`, res.status, Math.max(ra ? ra * 1000 : 0, rd ? rd * 1000 : 0));
     }
     return await res.json();
   } catch (e) {
@@ -209,7 +211,8 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
       fails[bucket] = (fails[bucket] || 0) + 1;
       const transient = e.status === 429 || e.status >= 500 || e.status === 0;
       const base = transient ? e.retryAfterMs || 60_000 : 10 * 60_000;
-      cooldown[bucket] = Date.now() + Math.min(10 * 60_000, base * 2 ** (fails[bucket] - 1));
+      // если сервер сам назвал длинное время ожидания (суточная квота), ждём ровно столько, иначе растущая пауза до 10 минут
+      cooldown[bucket] = Date.now() + (e.retryAfterMs > 10 * 60_000 ? Math.min(e.retryAfterMs, 24 * 3600_000) : Math.min(10 * 60_000, base * 2 ** (fails[bucket] - 1)));
       console.warn(`[ai] ${id} упал (${e.message.replace(/\s+/g, ' ').slice(0, 110)}); ${keyProblem ? 'ключ' : 'модель'}, подряд ${fails[bucket]}, пауза до ${new Date(cooldown[bucket]).toISOString()}`);
     }
   }
