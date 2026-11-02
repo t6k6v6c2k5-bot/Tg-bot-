@@ -1,6 +1,6 @@
 import { config } from './config.js';
 import { save, touchUser, hourOf } from './store.js';
-import { decide, isDirect, cheapReaction } from './filter.js';
+import { decide, isDirect, cheapReaction, closerKind } from './filter.js';
 import { app, respond, react } from './respond.js';
 import { watchQuestion } from './scheduler.js';
 import { learn, quickFacts } from './memory.js';
@@ -47,6 +47,23 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   let mode = decide({ direct, text, st, now });
+  // Человек поставил точку («понял», «ок», «збс», «спасибо», «ахах», 👍) — разговор окончен: не отвечаем,
+  // модель не дёргаем; иногда ставим реакцию, чтобы не выглядело, будто бот проигнорировал
+  // «да» в ответ на вопрос самого бота — не точка, а ответ: на него отвечаем
+  const botAsked = (() => {
+    const prev = [...st.history].slice(0, -1).reverse().find((m) => m.bot);
+    return Boolean(prev && /\?\s*$/.test(prev.text) && now - prev.ts < 10 * 60_000);
+  })();
+  const closer = mode && (mode === 'direct' || mode === 'critic') && !botAsked ? closerKind(detect) : null;
+  if (closer) {
+    console.log(`[closer] «${detect.slice(0, 30)}» (${closer}) — разговор окончен, молчу`);
+    const emoji = { thanks: '🤝', laugh: '😁', emoji: '👍', ack: '👌' }[closer];
+    if (Math.random() < 0.35 && Date.now() - (st.lastReactAt || 0) > 60_000 && (await react(chatId, msg.message_id, emoji))) {
+      st.lastReactAt = Date.now();
+      save();
+    }
+    return;
+  }
   // Покритиковали реплику бота (ответом на неё): признать и поправиться, а не нести новую чушь
   if (mode === 'direct' && replyToBot && isCriticism(detect)) mode = 'critic';
   console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);

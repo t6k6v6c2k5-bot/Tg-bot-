@@ -68,3 +68,26 @@ export function cheapReaction({ text, st, now, rng = Math.random }) {
   if (WIN.test(text)) return '🔥';
   return null;
 }
+
+// Реплика-«точка»: человек подтверждает, благодарит или смеётся. Отвечать на неё не нужно —
+// иначе бот выдаёт «ещё одну остроту» там, где разговор уже закончен.
+const CLOSER_ACK = /^(?:ок(?:ей|ейно)?|окей|ладно|ну\s+ладно|понял[аи]?|понятно|ясно|ясненько|ясн|принял[аи]?|принято|збс|зашибись|заебись|супер|класс|круто|норм|нормально|отлично|хорошо|ага|угу|да|ну\s+да|точно|согласен|согласна|верно|не\s+вопрос|договорились|вопросов\s+нет)$/iu;
+const CLOSER_THANKS = /^(?:спс|спасибо|пасиб|благодарю|благодарствую|мерси|дякую|сенкс|thx|thanks)(?:\s+(?:большое|тебе|бать|батя))?$/iu;
+const CLOSER_LAUGH = /^(?:а?ха(?:ха)+\p{L}*|ха|хех|лол|ору|ржу|ахах\p{L}*|\)+|😂|🤣|😁|😆|😄|😀|хд)$/iu;
+const CLOSER_EMOJI = /^(?:[👍👌🙏✅🫡🤝❤🔥👏💪🙂😊]+)$/u;
+
+/** @returns {'ack'|'thanks'|'laugh'|'emoji'|null} */
+export function closerKind(text) {
+  const t = (text || '')
+    .toLowerCase()
+    .replace(/(?:батя|бать|бот)[,!\s]*/giu, '') // обращение не меняет смысла
+    .replace(/[!.,…\s]+$/u, '')
+    .replace(/^[,.\s]+/u, '')
+    .trim();
+  if (!t || t.length > 24 || t.includes('?')) return null;
+  if (CLOSER_THANKS.test(t)) return 'thanks';
+  if (CLOSER_LAUGH.test(t)) return 'laugh';
+  if (CLOSER_EMOJI.test(t.replace(/\uFE0F/g, ''))) return 'emoji';
+  if (CLOSER_ACK.test(t)) return 'ack';
+  return null;
+}
