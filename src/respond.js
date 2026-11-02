@@ -6,6 +6,7 @@ import { remember } from './store.js';
 import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji } from './variety.js';
+import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, pickLine } from './safety.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
 
@@ -59,7 +60,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
       st.history,
       mode,
       direct ? 30 : config.historyInPrompt,
-      direct ? analysisContext(st, st.history[st.history.length - 1]?.text || '') : '',
+      direct ? [analysisContext(st, st.history[st.history.length - 1]?.text || ''), bodyRequestNote(st.history[st.history.length - 1]?.text || '', st)].filter(Boolean).join('\n\n') : '',
     );
     const ask = (banned = []) =>
       generate({
@@ -82,6 +83,14 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
     let r = parseReply(res.text, popts);
     console.log(`[${mode}] ${res.provider} -> ${r.type} (${angle.id})`);
+    if (r.type === 'text' && bodyJokeAboutPerson(r.text, st)) {
+      console.log(`[${mode}] шутка про тело/интим участника — перегенерирую`);
+      const res3 = await ask(['шутки про тело, внешность и интимную жизнь людей из чата']);
+      const r3 = res3 ? parseReply(res3.text, popts) : { type: 'skip' };
+      if (r3.type === 'text' && !bodyJokeAboutPerson(r3.text, st)) r = r3;
+      else if (direct) r = { type: 'text', text: pickLine(REFUSALS) };
+      else return false;
+    }
     if (r.type === 'text') {
       const bad = repetition(r.text, st);
       if (bad.length) {
@@ -94,6 +103,13 @@ export async function respond(chatId, st, { mode, replyTo }) {
     }
     if (r.type === 'skip') {
       console.log(`[${mode}] SKIP (${res.provider})`);
+      const q = st.history[st.history.length - 1]?.text || '';
+      // человек спросил напрямую — молчание выглядит как поломка; коротко отказываемся
+      if (direct && replyTo && q.length > 12 && Date.now() - (st.lastDeclineAt || 0) > 60_000) {
+        st.lastDeclineAt = Date.now();
+        await say(chatId, st, pickLine(DECLINES), replyTo);
+        return true;
+      }
       return false;
     }
     const now = Date.now();

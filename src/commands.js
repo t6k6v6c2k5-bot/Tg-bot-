@@ -7,6 +7,7 @@ import { app, say, roast } from './respond.js';
 import { LEVELS } from './filter.js';
 import { emptyMemory } from './memory.js';
 import { lifeStatus } from './life.js';
+import { CRUDE_LEVELS, crudeLevel } from './prompts.js';
 import { dossier, statsText, detectTargets } from './analysis.js';
 import { runCatchup, hoursFromText } from './catchup.js';
 
@@ -26,6 +27,7 @@ const ALIAS = {
   оживи: 'revive', revive: 'revive',
   тон: 'tone', tone: 'tone',
   жизнь: 'life', life: 'life',
+  пошлость: 'crude', crude: 'crude', vulgar: 'crude',
   пропустил: 'catchup', catchup: 'catchup', чтобыло: 'catchup',
   разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
@@ -46,6 +48,7 @@ export const BOT_COMMANDS = [
   { command: 'catchup', description: 'Что я пропустил (можно: /catchup 3)' },
   { command: 'analyze', description: 'Разбор участника: /analyze @ник' },
   { command: 'stats', description: 'Статистика чата' },
+  { command: 'crude', description: 'Пошлость и мат в шутках 0-3' },
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
@@ -60,6 +63,7 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /прожарь @ник — подколоть (или ответом на сообщение)
 /неподкалывай — не подкалывать тебя (повтор — вернуть)
 /тон мягко|жёстко — тон подколов
+/пошлость 0-3 — 0 чисто, 1 понимаю и намекаю (по умолчанию), 2 пошловато и лёгкий мат, 3 как в компании взрослых
 /табу <тема> — запретная тема, /табу_список, /табу_сброс
 /чтопомнишь — что я помню о тебе
 /забудь — забыть тебя и не запоминать (повтор — вернуть); /забудь_всё — стереть память чата
@@ -108,6 +112,16 @@ async function exec(ctx, key, cmd, message) {
       st.settings.activity = n;
       save();
       await reply(`Активность ${n}: до ${LEVELS[n].cap} самостоятельных реплик в час.`);
+      break;
+    }
+    case 'crude': {
+      const n = Number(cmd.args);
+      const names = ['чисто', 'понимаю и намекаю', 'пошловато и лёгкий мат', 'как среди взрослых'];
+      if (cmd.args === '' || !(n >= 0 && n <= 3) || !Number.isInteger(n))
+        return void (await reply(`Пошлость сейчас: ${crudeLevel(st)} (${names[crudeLevel(st)]}). Поставить: /пошлость 0-3. Границы остаются на любом уровне: без несовершеннолетних, без откровенного секса, без унижения людей.`));
+      st.settings.crude = n;
+      save();
+      await reply(`Пошлость ${n}: ${names[n]}. ${n >= 2 ? 'Но подстраиваюсь под чат: если никто не матерится, и я не буду.' : ''}`.trim());
       break;
     }
     case 'tone':

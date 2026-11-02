@@ -3,6 +3,7 @@ import { generate } from './ai.js';
 import { parseReply } from './parse.js';
 import { system, pokePrompt, greetingPrompt, talePrompt } from './prompts.js';
 import { pickAngle, repetition } from './variety.js';
+import { bodyJokeAboutPerson } from './safety.js';
 import { app, say } from './respond.js';
 import { factsAbout } from './memory.js';
 import { isSerious } from './filter.js';
@@ -164,11 +165,11 @@ async function ask(st, prompt, maxTokens = 180, opts) {
   let res = await go();
   let r = res && parseReply(res.text, opts);
   if (r?.type === 'text') {
-    const bad = repetition(r.text, st);
+    const bad = bodyJokeAboutPerson(r.text, st) ? ['шутки про тело, внешность и интим людей из чата'] : repetition(r.text, st);
     if (bad.length) {
       res = await go(bad);
       r = res && parseReply(res.text, opts);
-      if (r?.type === 'text' && repetition(r.text, st).length) r = null;
+      if (r?.type === 'text' && (repetition(r.text, st).length || bodyJokeAboutPerson(r.text, st))) r = null;
     }
   }
   return r ? { ...r, angle } : null;
