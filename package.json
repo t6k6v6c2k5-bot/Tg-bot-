@@ -1,0 +1,15 @@
+{
+  "name": "tg-chat-buddy",
+  "version": "0.1.0",
+  "description": "Юморной Telegram-бот, который молчит по умолчанию и не засоряет чат",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}

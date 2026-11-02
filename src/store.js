@@ -1,0 +1,70 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from './config.js';
+
+const FILE = path.join(config.dataDir, 'state.json');
+const MAX_HISTORY = 400;
+const chats = new Map();
+let saveTimer = null;
+
+const fresh = () => ({
+  history: [], // {id, uid, name, text, ts, bot?}
+  users: {}, // uid -> {name, username}
+  settings: { activity: 3, tone: 'soft', mutedUntil: 0 },
+  optOut: {}, // uid -> true  (/неподкалывай)
+  taboo: [],
+  roastLast: {}, // uid -> ts последнего подкола/упоминания
+  unsol: [], // ts самопроизвольных реплик за последний час
+  lastUnsolAt: 0,
+  lastReactAt: 0,
+  lastReviveAt: 0,
+  lastDigestDay: '',
+  lastDigestCmdAt: 0,
+});
+
+export function load() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    for (const [id, st] of Object.entries(raw)) chats.set(Number(id), { ...fresh(), ...st });
+    console.log(`[store] загружено чатов: ${chats.size}`);
+  } catch {
+    /* первый запуск */
+  }
+}
+
+export function chat(id) {
+  let st = chats.get(id);
+  if (!st) chats.set(id, (st = fresh()));
+  return st;
+}
+
+export const allChats = () => [...chats.entries()];
+
+export function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 5000);
+}
+
+export function saveNow() {
+  try {
+    fs.mkdirSync(config.dataDir, { recursive: true });
+    const tmp = FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(chats)));
+    fs.renameSync(tmp, FILE);
+  } catch (e) {
+    console.error('[store] не удалось сохранить:', e.message);
+  }
+}
+
+export function remember(st, entry) {
+  st.history.push(entry);
+  if (st.history.length > MAX_HISTORY) st.history.splice(0, st.history.length - MAX_HISTORY);
+  if (entry.uid && !entry.bot) st.users[entry.uid] = { name: entry.name, username: entry.username };
+  save();
+}
+
+// ---- время в часовом поясе бота ----
+const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: config.tz });
+const hourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: config.tz, hour: '2-digit', hour12: false });
+export const dayKey = (ts) => dayFmt.format(ts);
+export const hourOf = (ts) => Number(hourFmt.format(ts)) % 24;
