@@ -97,7 +97,8 @@ const providers = {
           model,
           max_tokens: maxTokens,
           temperature,
-          ...(json ? { response_format: { type: 'json_object' } } : {}),
+          // у gpt-oss принудительный JSON-режим капризен (400 «Failed to generate JSON»): просим JSON в промпте, разбор терпимый
+          ...(json && !/gpt-oss/.test(model) ? { response_format: { type: 'json_object' } } : {}),
           // «размышления» отключаем/ужимаем, иначе они съедают лимит токенов короткой реплики
           ...(/qwen/.test(model) ? { reasoning_effort: 'none' } : /gpt-oss/.test(model) ? { reasoning_effort: 'low' } : {}),
           messages: [
@@ -172,6 +173,11 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
       }
       console.log(`[ai] ${id}: пустой ответ`);
     } catch (e) {
+      // 400 про сам запрос (не удалось собрать JSON и т.п.) — не повод отключать модель для всех остальных запросов
+      if (e.status === 400 && /failed to generate json|json/i.test(e.message) && !/api key/i.test(e.message)) {
+        console.warn(`[ai] ${id}: 400 по формату запроса (${e.message.replace(/\s+/g, ' ').slice(0, 80)}); модель не отключаю`);
+        continue;
+      }
       const keyProblem = e.status === 429 || e.status === 401 || e.status === 403 || (e.status === 400 && /api key/i.test(e.message));
       const bucket = keyProblem ? kk : mk;
       fails[bucket] = (fails[bucket] || 0) + 1;

@@ -8,7 +8,7 @@ process.env.GEMINI_MODEL = 'bad-model,good-model';
 delete process.env.GROK_API_KEY;
 process.env.GROQ_API_KEY = 'gsk_test_1111';
 process.env.GROQ_API_KEY_2 = 'gsk_test_2222';
-process.env.GROQ_MODEL = 'groq-model';
+process.env.GROQ_MODEL = 'openai/gpt-oss-test';
 const { config } = await import('../src/config.js');
 const { generate } = await import('../src/ai.js');
 
@@ -83,7 +83,7 @@ test('Gemini недоступен целиком — отвечает Groq (с �
     seen.push(url);
     if (url.includes('groq.com')) {
       const body = JSON.parse(opts.body);
-      assert.equal(body.model, 'groq-model');
+      assert.equal(body.model, 'openai/gpt-oss-test');
       assert.equal(body.messages[0].role, 'system');
       assert.match(opts.headers.authorization, /^Bearer gsk_test_/);
       return new Response(JSON.stringify({ choices: [{ message: { content: 'ответ от groq' } }] }));
@@ -93,10 +93,27 @@ test('Gemini недоступен целиком — отвечает Groq (с �
   // паузы от прошлых тестов могли уже закрыть Gemini — тогда ответ от Groq придёт сразу
   const r = await generate({ system: 's', prompt: 'p', high: true });
   assert.ok(r, 'ответ должен прийти');
-  assert.match(r.provider, /^groq:groq-model:…\d{4}$/);
+  assert.match(r.provider, /^groq:openai\/gpt-oss-test:…\d{4}$/);
   assert.equal(r.text, 'ответ от groq');
 });
 
 test('ключи Groq читаются из нескольких переменных', () => {
   assert.deepEqual(config.groqKeys.sort(), ['gsk_test_1111', 'gsk_test_2222']);
+});
+
+test('400 «не удалось собрать JSON» не отключает модель для обычных запросов', async () => {
+  const seen = [];
+  globalThis.fetch = async (url, opts) => {
+    if (!url.includes('groq.com')) return new Response('down', { status: 503 });
+    const body = JSON.parse(opts.body);
+    seen.push({ json: Boolean(body.response_format) });
+    return body.messages[1].content === 'json-запрос'
+      ? new Response('{"error":{"message":"Failed to generate JSON. Please adjust your prompt."}}', { status: 400 })
+      : new Response(JSON.stringify({ choices: [{ message: { content: 'обычный ответ' } }] }));
+  };
+  const bad = await generate({ system: 's', prompt: 'json-запрос', json: true, high: true });
+  assert.equal(bad, null); // запрос не удался, но...
+  const ok = await generate({ system: 's', prompt: 'обычный', high: true });
+  assert.equal(ok?.text, 'обычный ответ'); // ...модель по-прежнему доступна обычным запросам
+  assert.ok(seen.every((r) => !r.json)); // для gpt-oss принудительный JSON-режим не включаем
 });
