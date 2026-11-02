@@ -6,6 +6,8 @@ import { remember } from './store.js';
 import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji } from './variety.js';
+import { bestOf } from './wit.js';
+import { transcript } from './prompts.js';
 import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, pickLine } from './safety.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
@@ -56,20 +58,32 @@ export async function respond(chatId, st, { mode, replyTo }) {
   try {
     const direct = mode === 'direct';
     const angle = pickAngle(st);
-    const prompt = chatPrompt(
-      st.history,
-      mode,
-      direct ? 30 : config.historyInPrompt,
-      direct ? [analysisContext(st, st.history[st.history.length - 1]?.text || ''), bodyRequestNote(st.history[st.history.length - 1]?.text || '', st)].filter(Boolean).join('\n\n') : '',
-    );
+    const lastText = st.history[st.history.length - 1]?.text || '';
+    const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';
+    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock);
+    // Остроумие: без блока данных (аналитика, пересказы) — пишем варианты и выбираем лучший
+    const useWit = !dataBlock;
+    const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
     const ask = (banned = []) =>
-      generate({
-        system: system(st, app.name, { long: direct, angle, banned }),
-        prompt,
-        maxTokens: direct ? 500 : 100,
-        high: direct,
-        tier: direct ? 'smart' : 'fast',
-      });
+      useWit
+        ? bestOf({
+            system: system(st, app.name, { long: direct, angle, banned }),
+            prompt,
+            context: transcript(st.history, 8),
+            direct,
+            reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0,
+            tier: direct ? 'smart' : 'fast',
+            high: direct,
+            maxTokens: direct ? 160 : 70,
+            parseOpts: popts,
+          })
+        : generate({
+            system: system(st, app.name, { long: direct, angle, banned }),
+            prompt,
+            maxTokens: direct ? 500 : 100,
+            high: direct,
+            tier: direct ? 'smart' : 'fast',
+          });
     let res = await ask();
     if (!res) {
       console.log(`[${mode}] ИИ не ответил`);
@@ -80,9 +94,8 @@ export async function respond(chatId, st, { mode, replyTo }) {
       }
       return false;
     }
-    const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
     let r = parseReply(res.text, popts);
-    console.log(`[${mode}] ${res.provider} -> ${r.type} (${angle.id})`);
+    console.log(`[${mode}] ${res.provider} -> ${r.type} (${angle.id})${res.weak ? ' [редактор: всё слабо]' : ''}${res.pick ? ` [выбран ${res.pick}]` : ''}`);
     if (r.type === 'text' && bodyJokeAboutPerson(r.text, st)) {
       console.log(`[${mode}] шутка про тело/интим участника — перегенерирую`);
       const res3 = await ask(['шутки про тело, внешность и интимную жизнь людей из чата']);
