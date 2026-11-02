@@ -133,3 +133,13 @@ test('одинаковые начала реплик отсекаются, эм�
   assert.equal(trimEmoji('Красота 🔥', st), 'Красота'); // эмодзи уже были в обеих последних репликах
   assert.equal(trimEmoji('Красота 🔥', mk()), 'Красота 🔥');
 });
+
+test('критика распознаётся: «набор слов», «бред», «чушь»; обычные фразы — нет', async () => {
+  const { isCriticism } = await import('../src/taste.js');
+  for (const t of ['Набор слов', 'что за бред', 'несмешно', 'не смешно вообще', 'чушь какая-то', 'это бессмыслица', 'надоел']) assert.ok(isCriticism(t), t);
+  for (const t of ['а вот это уже смешно', 'расскажи про идеи?', 'нормально, спасибо', 'ахах']) assert.ok(!isCriticism(t), t);
+  const st = mk();
+  st.history = [msg(0, 'Батя', 'Настоящий капитан присматривает дерево', 100, { bot: true, angle: 'absurd', id: 7 }), msg(1, 'Руслан', 'Набор слов', 101)];
+  assert.equal(recordFeedback(st, { text: 'Набор слов', reply_to_message: { message_id: 7 } }, 102), 'disliked');
+  assert.match(st.taste.disliked[0].t, /капитан/);
+});

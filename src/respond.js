@@ -56,7 +56,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
   }
   busy.add(chatId);
   try {
-    const direct = mode === 'direct';
+    const direct = mode === 'direct' || mode === 'critic';
     const angle = pickAngle(st);
     const lastText = st.history[st.history.length - 1]?.text || '';
     const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';

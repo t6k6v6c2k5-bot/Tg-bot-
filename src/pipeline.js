@@ -4,7 +4,7 @@ import { decide, isDirect, cheapReaction } from './filter.js';
 import { app, respond, react } from './respond.js';
 import { watchQuestion } from './scheduler.js';
 import { learn, quickFacts } from './memory.js';
-import { recordFeedback } from './taste.js';
+import { recordFeedback, isCriticism } from './taste.js';
 import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
@@ -47,7 +47,9 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
     }
   }
 
-  const mode = decide({ direct, text, st, now });
+  let mode = decide({ direct, text, st, now });
+  // Покритиковали реплику бота (ответом на неё): признать и поправиться, а не нести новую чушь
+  if (mode === 'direct' && replyToBot && isCriticism(detect)) mode = 'critic';
   console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);
   if (mode) {
     if (mode === 'direct' && isCatchupRequest(detect)) {
