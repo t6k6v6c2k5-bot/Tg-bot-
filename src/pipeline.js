@@ -3,7 +3,8 @@ import { save, touchUser, hourOf } from './store.js';
 import { decide, isDirect, cheapReaction } from './filter.js';
 import { app, respond, react } from './respond.js';
 import { watchQuestion } from './scheduler.js';
-import { learn } from './memory.js';
+import { learn, quickFacts } from './memory.js';
+import { recordFeedback } from './taste.js';
 import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
@@ -27,15 +28,23 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   const replyToBot = msg.reply_to_message?.from?.id === app.id;
   onHumanMessage(st, now, replyToBot);
   noteHour(st, hourOf(now));
+  // Учёба без ИИ: реакция чата на реплики бота и факты по простым правилам — всегда, даже если модели недоступны
+  if (!isPrivate) {
+    const fb = recordFeedback(st, { text, reply_to_message: msg.reply_to_message }, now);
+    if (fb) console.log(`[taste] чат ${fb === 'liked' ? 'посмеялся' : fb === 'disliked' ? 'недоволен' : 'ответил'}`);
+    if (quickFacts(st, msg.from.id, text, now)) console.log('[memory] факт записан правилом');
+  }
   if (record) return;
 
   const direct = isPrivate || isDirect({ text: detect, botUsername: app.username, aliases: config.aliases, replyToBot });
 
-  // Обучение «блокнота»: раз в ~25 сообщений, не чаще раза в 10 минут
-  if (!isPrivate && ++st.sinceLearn >= 25 && now - st.lastLearnAt > 10 * 60_000) {
-    st.sinceLearn = 0;
-    st.lastLearnAt = now;
-    learn(chatId, st).then(save);
+  // Обучение «блокнота» через ИИ: каждые ~12 сообщений, повтор через 5 минут, если модели были недоступны
+  if (!isPrivate) {
+    st.sinceLearn++;
+    if (st.sinceLearn >= 12 && now - st.lastLearnAt > 5 * 60_000) {
+      st.lastLearnAt = now;
+      learn(chatId, st).then(save);
+    }
   }
 
   const mode = decide({ direct, text, st, now });

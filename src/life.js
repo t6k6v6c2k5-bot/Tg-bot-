@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { generate } from './ai.js';
 import { parseReply } from './parse.js';
 import { system, pokePrompt, greetingPrompt, talePrompt } from './prompts.js';
+import { pickAngle, repetition } from './variety.js';
 import { app, say } from './respond.js';
 import { factsAbout } from './memory.js';
 import { isSerious } from './filter.js';
@@ -145,8 +146,8 @@ export function pickInitiative(st, now, { hour, today, rng = Math.random }) {
   return options[0];
 }
 
-async function speak(chatId, st, text, kind) {
-  const sent = await say(chatId, st, text);
+async function speak(chatId, st, text, kind, angle) {
+  const sent = await say(chatId, st, text, undefined, { angle: angle?.id });
   const now = Date.now();
   st.initLog = [...(st.initLog || []), now];
   st.lastInitAt = now;
@@ -156,8 +157,22 @@ async function speak(chatId, st, text, kind) {
   return sent;
 }
 
-const ask = (st, prompt, maxTokens = 180) =>
-  generate({ system: system(st, app.name), prompt, maxTokens, temperature: 1 });
+// Инициатива с «приёмом» и проверкой на повтор (одна перегенерация); null — нечем поделиться
+async function ask(st, prompt, maxTokens = 180, opts) {
+  const angle = pickAngle(st);
+  const go = (banned = []) => generate({ system: system(st, app.name, { angle, banned }), prompt, maxTokens, temperature: 1 });
+  let res = await go();
+  let r = res && parseReply(res.text, opts);
+  if (r?.type === 'text') {
+    const bad = repetition(r.text, st);
+    if (bad.length) {
+      res = await go(bad);
+      r = res && parseReply(res.text, opts);
+      if (r?.type === 'text' && repetition(r.text, st).length) r = null;
+    }
+  }
+  return r ? { ...r, angle } : null;
+}
 
 export async function runInitiative(chatId, st, kind, today) {
   const now = Date.now();
@@ -177,17 +192,15 @@ export async function runInitiative(chatId, st, kind, today) {
 
   if (kind === 'greeting') {
     st.lastGreetDay = today;
-    const res = await ask(st, greetingPrompt(st.history), 120);
-    const r = res && parseReply(res.text);
-    if (r?.type === 'text') await speak(chatId, st, r.text, 'greeting');
+    const r = await ask(st, greetingPrompt(st.history), 120);
+    if (r?.type === 'text') await speak(chatId, st, r.text, 'greeting', r.angle);
     return;
   }
 
   if (kind === 'tale') {
     st.lastTaleAt = now;
-    const res = await ask(st, talePrompt(st.history), 220);
-    const r = res && parseReply(res.text, { maxLines: 4, maxChars: 500 });
-    if (r?.type === 'text') await speak(chatId, st, r.text, 'tale');
+    const r = await ask(st, talePrompt(st.history), 220, { maxLines: 4, maxChars: 500 });
+    if (r?.type === 'text') await speak(chatId, st, r.text, 'tale', r.angle);
     return;
   }
 
@@ -198,15 +211,14 @@ export async function runInitiative(chatId, st, kind, today) {
     st.pokeLast = { ...(st.pokeLast || {}), [target.uid]: now };
     const lines = st.history.filter((m) => !m.bot && String(m.uid) === String(target.uid)).slice(-3).map((m) => m.text);
     const handle = u.username ? `@${u.username}` : '';
-    const res = await ask(
+    const r = await ask(
       st,
       pokePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, quietHours: target.quietHours, history: st.history }),
     );
-    const r = res && parseReply(res.text);
     if (r?.type !== 'text') return;
     // чтобы человеку пришло уведомление, обращение по @нику должно быть в тексте
     const text = handle && !r.text.toLowerCase().includes(handle.toLowerCase()) ? `${handle}, ${r.text}` : r.text;
-    await speak(chatId, st, text, 'poke');
+    await speak(chatId, st, text, 'poke', r.angle);
   }
 }
 

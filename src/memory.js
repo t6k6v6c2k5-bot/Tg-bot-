@@ -130,14 +130,72 @@ ${known || '(пусто)'}
 ${lines}`;
 }
 
+
+// ---- запись БЕЗ ИИ: простые правила + повторы фраз ----
+// Работают всегда, даже когда все модели недоступны.
+
+const FACT_RULES = [
+  [/(?:^|[\s,.!?])(?:я\s+)?(?:обожаю|люблю|фанатею\s+от|фанат|залип(?:ла|ал)?\s+на)\s+(.{3,45}?)(?=[.!?,;]|$)/iu, (m) => `любит ${m[1]}`],
+  [/(?:^|[\s,.!?])(?:я\s+)?(?:ненавижу|терпеть\s+не\s+могу)\s+(.{3,40}?)(?=[.!?,;]|$)/iu, (m) => `не любит ${m[1]}`],
+  [/(?:^|[\s,.!?])(?:я\s+)?игра(?:ю|ем)\s+в\s+(.{2,30}?)(?=[.!?,;]|$)/iu, (m) => `играет в ${m[1]}`],
+  [/(?:^|[\s,.!?])(?:я\s+)?(?:увлекаюсь|занимаюсь)\s+(.{3,30}?)(?=[.!?,;]|$)/iu, (m) => `увлекается: ${m[1]}`],
+  [/мо[йяёе]\s+любим\p{L}*\s+(.{3,35}?)(?=[.!?,;]|$)/iu, (m) => `любимое: ${m[1]}`],
+  [/у\s+меня\s+(?:есть\s+)?(кот|кошка|кошк\p{L}*|собак\p{L}*|пёс|пес|хомяк\p{L}*|попугай\p{L}*)/iu, (m) => `есть питомец: ${m[1]}`],
+];
+
+export function addFact(st, uid, raw, now = Date.now()) {
+  if (st.memOff?.[uid]) return false;
+  const m = (st.memory ||= emptyMemory());
+  return addUnique((m.users[uid] ||= []), raw, MAX_FACTS, now);
+}
+
+export function quickFacts(st, uid, text, now = Date.now()) {
+  if (!text || st.memOff?.[uid] || text.startsWith('[')) return 0; // пометки вроде «[фото]» пропускаем
+  let n = 0;
+  for (const [re, fmt] of FACT_RULES) {
+    const m = text.match(re);
+    if (m && addFact(st, uid, fmt(m), now)) n++;
+  }
+  return n;
+}
+
+const norm = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+
+// Фраза, которую в чате повторяют ≥3 раза разные люди, — внутренний мем
+export function quickMemes(st, now = Date.now()) {
+  const m = (st.memory ||= emptyMemory());
+  const seen = new Map();
+  for (const h of st.history.slice(-300)) {
+    if (h.bot || h.text.startsWith('[')) continue;
+    const k = norm(h.text);
+    const words = k.split(' ').length;
+    if (!k || k.length > 40 || words < 2 || words > 6) continue;
+    const e = seen.get(k) || { n: 0, users: new Set(), raw: h.text };
+    e.n++;
+    e.users.add(String(h.uid));
+    seen.set(k, e);
+  }
+  let added = 0;
+  for (const e of seen.values()) if (e.n >= 3 && e.users.size >= 2 && addUnique((m.memes ||= []), `«${e.raw.trim()}»`, MAX_MEMES, now)) added++;
+  return added;
+}
+
+// Быстрая запись без ИИ раз в несколько десятков сообщений
+export const ruleLearn = (st) => quickMemes(st);
+
 const learning = new Set();
 
+// Очередь непрочитанного: курсор st.learnedUpTo сдвигается только после УСПЕШНОГО разбора,
+// поэтому если все модели недоступны, сообщения не теряются — их разберёт следующая попытка.
 export async function learn(chatId, st) {
   if (learning.has(chatId)) return 0;
   learning.add(chatId);
   try {
-    const msgs = st.history.filter((m) => !m.bot && !st.memOff?.[m.uid]).slice(-WINDOW);
-    if (msgs.length < 10) return 0;
+    ruleLearn(st); // мемы фиксируем сразу, без ИИ
+    const cursor = st.learnedUpTo || 0;
+    const pending = st.history.filter((m) => !m.bot && !st.memOff?.[m.uid] && m.ts > cursor);
+    if (pending.length < 10) return 0;
+    const msgs = cursor ? pending.slice(0, WINDOW) : pending.slice(-WINDOW); // с нуля — только свежее
     // имя -> uid, неоднозначные имена пропускаем
     const byName = new Map();
     for (const m of msgs) byName.set(m.name, byName.has(m.name) && byName.get(m.name) !== String(m.uid) ? null : String(m.uid));
@@ -149,19 +207,24 @@ export async function learn(chatId, st) {
       temperature: 0.2,
       json: true,
     });
-    if (!res) return 0;
+    if (!res) return -1; // все провайдеры недоступны: курсор не двигаем, повторим позже
     const parsed = parseJson(res.text);
     if (!parsed) {
-      console.log('[memory] не удалось разобрать JSON');
-      return 0;
+      console.log('[memory] не удалось разобрать JSON, повторим');
+      return -1;
     }
     const added = mergeMemory(st, parsed, nameToUid);
-    console.log(`[memory] chat=${chatId} +${added} записей (${res.provider})`);
+    st.learnedUpTo = msgs[msgs.length - 1].ts;
+    st.sinceLearn = Math.max(0, (st.sinceLearn || 0) - msgs.length);
+    console.log(`[memory] chat=${chatId} +${added} записей из ${msgs.length} сообщений (${res.provider}); в очереди ещё ${pending.length - msgs.length}`);
     return added;
   } catch (e) {
     console.error('[memory]', e.message);
-    return 0;
+    return -1;
   } finally {
     learning.delete(chatId);
   }
 }
+
+// Есть ли чему учиться прямо сейчас (для планировщика)
+export const learnBacklog = (st) => st.history.filter((m) => !m.bot && !st.memOff?.[m.uid] && m.ts > (st.learnedUpTo || 0)).length;

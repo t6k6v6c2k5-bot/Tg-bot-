@@ -3,6 +3,7 @@ import { allChats, dayKey, hourOf, save } from './store.js';
 import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
 import { respond } from './respond.js';
+import { learn, learnBacklog } from './memory.js';
 import { pickInitiative, runInitiative, trackIgnore } from './life.js';
 import { refreshRoster, rosterDue } from './roster.js';
 
@@ -15,6 +16,14 @@ async function tick() {
     try {
       trackIgnore(st, now);
       if (rosterDue(st, now)) await refreshRoster(chatId, st);
+      // Память не зависит от настроения бота: даже в режиме тишины доучиваем непрочитанное,
+      // если чат затих и ИИ снова доступен
+      const idle = now - (st.history.at(-1)?.ts ?? 0);
+      if (learnBacklog(st) >= 10 && now - st.lastLearnAt > 5 * 60_000 && idle > 2 * 60_000) {
+        st.lastLearnAt = now;
+        await learn(chatId, st);
+        save();
+      }
       if (st.settings.mutedUntil > now) continue;
 
       // Итоги дня — раз в сутки

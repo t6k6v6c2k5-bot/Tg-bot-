@@ -5,6 +5,7 @@ import { system, chatPrompt, roastPrompt } from './prompts.js';
 import { remember } from './store.js';
 import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
+import { pickAngle, repetition, trimEmoji } from './variety.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
 
@@ -25,11 +26,12 @@ export function mentionedUsers(st, text) {
   return out;
 }
 
-export async function say(chatId, st, text, replyTo) {
+export async function say(chatId, st, text, replyTo, meta = {}) {
   const sent = await app.telegram.sendMessage(chatId, text, {
     reply_parameters: replyTo ? { message_id: replyTo, allow_sending_without_reply: true } : undefined,
   });
-  remember(st, { id: sent.message_id, uid: app.id, name: app.name, text, ts: Date.now(), bot: true });
+  remember(st, { id: sent.message_id, uid: app.id, name: app.name, text, ts: Date.now(), bot: true, ...meta });
+  if (meta.angle) st.lastAngle = meta.angle;
   return sent;
 }
 
@@ -52,18 +54,22 @@ export async function respond(chatId, st, { mode, replyTo }) {
   busy.add(chatId);
   try {
     const direct = mode === 'direct';
-    const res = await generate({
-      system: system(st, app.name, { long: direct }),
-      prompt: chatPrompt(
-        st.history,
-        mode,
-        direct ? 30 : config.historyInPrompt,
-        direct ? analysisContext(st, st.history[st.history.length - 1]?.text || '') : '',
-      ),
-      maxTokens: direct ? 500 : 100,
-      high: direct,
-      tier: direct ? 'smart' : 'fast',
-    });
+    const angle = pickAngle(st);
+    const prompt = chatPrompt(
+      st.history,
+      mode,
+      direct ? 30 : config.historyInPrompt,
+      direct ? analysisContext(st, st.history[st.history.length - 1]?.text || '') : '',
+    );
+    const ask = (banned = []) =>
+      generate({
+        system: system(st, app.name, { long: direct, angle, banned }),
+        prompt,
+        maxTokens: direct ? 500 : 100,
+        high: direct,
+        tier: direct ? 'smart' : 'fast',
+      });
+    let res = await ask();
     if (!res) {
       console.log(`[${mode}] ИИ не ответил`);
       const now = Date.now();
@@ -73,8 +79,19 @@ export async function respond(chatId, st, { mode, replyTo }) {
       }
       return false;
     }
-    const r = parseReply(res.text, direct ? { maxLines: 6, maxChars: 800 } : undefined);
-    console.log(`[${mode}] ${res.provider} -> ${r.type}`);
+    const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
+    let r = parseReply(res.text, popts);
+    console.log(`[${mode}] ${res.provider} -> ${r.type} (${angle.id})`);
+    if (r.type === 'text') {
+      const bad = repetition(r.text, st);
+      if (bad.length) {
+        console.log(`[${mode}] повтор: ${bad.join(', ')} — перегенерирую`);
+        const res2 = await ask(bad);
+        const r2 = res2 ? parseReply(res2.text, popts) : { type: 'skip' };
+        if (r2.type === 'text' && !repetition(r2.text, st).length) r = r2;
+        else if (!direct) return false; // сам вклиниваться с повтором не стоит
+      }
+    }
     if (r.type === 'skip') {
       console.log(`[${mode}] SKIP (${res.provider})`);
       return false;
@@ -93,7 +110,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
       if (!replyTo || !(await react(chatId, replyTo, r.emoji))) return false;
       st.lastReactAt = now;
     } else {
-      await say(chatId, st, r.text, replyTo);
+      await say(chatId, st, trimEmoji(r.text, st), replyTo, { angle: angle.id });
     }
     if (!direct) {
       st.unsol.push(now);
