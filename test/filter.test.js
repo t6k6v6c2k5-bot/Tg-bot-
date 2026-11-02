@@ -59,8 +59,8 @@ test('разбор ответа ИИ', () => {
   assert.deepEqual(parseReply('REACT:🔥'), { type: 'react', emoji: '🔥' });
   assert.deepEqual(parseReply('REACT:💩'), { type: 'skip' });
   assert.equal(parseReply('"Ну ты и скажешь"').text, 'Ну ты и скажешь');
-  assert.equal(parseReply('a\nb\nc').text, 'a\nb');
-  assert.ok(parseReply('x'.repeat(1000)).text.length <= 280);
+  assert.equal(parseReply('а\nб\nв').text, 'а\nб');
+  assert.ok(parseReply('я'.repeat(1000)).text.length <= 280);
 });
 
 test('политику и войну сам не поднимает, но на прямой вопрос отвечает', () => {
@@ -70,4 +70,11 @@ test('политику и войну сам не поднимает, но на �
   assert.equal(cheapReaction({ text: 'ахахах', st: pol, now: NOW, rng: () => 0 }), null);
   assert.equal(decide({ direct: true, text: 'батя, чей Крым?', st: pol, now: NOW }), 'direct');
   assert.ok(canSpeakUnsolicited(mk({ history: [{ text: 'выбор пиццы сложный', name: 'a' }] }), NOW)); // «выбор» не политика
+});
+
+test('протечка рассуждений и префикс «Батя:» отсекаются', () => {
+  assert.deepEqual(parseReply('This is a standard query.\nDraft: «Меня создал @vladik4638»'), { type: 'skip' });
+  assert.deepEqual(parseReply('Answer: ok'), { type: 'skip' });
+  assert.equal(parseReply('Батя: Ну здорово, орлы').text, 'Ну здорово, орлы');
+  assert.equal(parseReply('Ну здорово, Dota-фанаты').text, 'Ну здорово, Dota-фанаты'); // отдельные латинские слова не мешают
 });

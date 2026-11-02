@@ -98,13 +98,15 @@ const providers = {
           max_tokens: maxTokens,
           temperature,
           ...(json ? { response_format: { type: 'json_object' } } : {}),
+          // «размышления» отключаем/ужимаем, иначе они съедают лимит токенов короткой реплики
+          ...(/qwen/.test(model) ? { reasoning_effort: 'none' } : /gpt-oss/.test(model) ? { reasoning_effort: 'low' } : {}),
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: prompt },
           ],
         },
       );
-      return data.choices?.[0]?.message?.content ?? '';
+      return (data.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '');
     },
   },
   grok: {

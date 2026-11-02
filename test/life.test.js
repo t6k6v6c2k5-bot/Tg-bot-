@@ -88,7 +88,7 @@ test('кого звать: давно молчащих, не чаще раза �
 });
 
 test('длинные ответы только по запросу', () => {
-  const long = 'a\nb\nc\nd\ne\nf\ng';
+  const long = 'а\nб\nв\nг\nд\nе\nж';
   assert.equal(parseReply(long).text.split('\n').length, 2);
   assert.equal(parseReply(long, { maxLines: 5, maxChars: 700 }).text.split('\n').length, 5);
 });

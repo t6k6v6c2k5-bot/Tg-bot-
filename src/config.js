@@ -24,7 +24,7 @@ export const config = {
   grokKey: env.GROK_API_KEY,
   // Groq (не путать с Grok от xAI): быстрый запасной мозг и Whisper для голосовых
   groqKeys,
-  groqModels: keyList(env.GROQ_MODEL || 'llama-3.3-70b-versatile,llama-3.1-8b-instant'),
+  groqModels: keyList(env.GROQ_MODEL || 'openai/gpt-oss-120b,openai/gpt-oss-20b'),
   groqWhisperModel: env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo',
   grokModel: env.GROK_MODEL || 'grok-4-fast',
   // «умный» уровень для прямых вопросов, дальше запасные из geminiModels

@@ -8,7 +8,12 @@ export const REACTIONS = new Set(
 export function parseReply(raw, { maxLines = 2, maxChars = config.maxReplyChars } = {}) {
   if (!raw) return { type: 'skip' };
   let t = raw.trim().replace(/^["«“]+|["»”]+$/g, '').trim();
+  t = t.replace(/^(?:Батя|Бот)\s*:\s*/i, ''); // некоторые модели начинают с «Батя:»
   if (!t || /^\W*SKIP\b/i.test(t)) return { type: 'skip' };
+  // протечка рассуждений: английский текст или служебные пометки вместо реплики
+  const cyr = (t.match(/[а-яёіїєґ]/gi) || []).length;
+  const lat = (t.match(/[a-z]/gi) || []).length;
+  if (lat > cyr || /^(draft|answer|thinking|reasoning|teasing|note)\s*:/im.test(t)) return { type: 'skip' };
   const r = t.match(/^REACT:\s*(\S+)/i);
   if (r) {
     const emoji = r[1].replace(/️/g, '');
