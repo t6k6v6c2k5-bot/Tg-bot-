@@ -10,6 +10,7 @@ import { app, say } from './respond.js';
 import { factsAbout } from './memory.js';
 import { isSerious } from './filter.js';
 import { sendRevive } from './commands.js';
+import { isAdminId, ownerSerious } from './owner.js';
 
 // «Жизнь» Бати: он сам заговаривает, когда долго тихо, зовёт людей по имени,
 // здоровается утром и травит байки. Всё в рамках предохранителей.
@@ -127,6 +128,7 @@ export function pickNeedleTarget(st, now, rng = Math.random) {
   const pool = Object.entries(seen).filter(
     ([uid, ts]) =>
       st.users[uid] &&
+      !(ownerSerious() && isAdminId(Number(uid))) &&
       !st.optOut?.[uid] &&
       !(st.leaveAlone?.[uid] > now - WEEK) &&
       now - ts < 3 * 24 * H &&

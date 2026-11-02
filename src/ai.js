@@ -197,6 +197,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
       const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json, media, apiKey })).trim();
       if (text) {
         fails[mk] = fails[kk] = 0;
+        lastServed = { provider: name, model, id, at: Date.now() };
         return { text, provider: id };
       }
       console.log(`[ai] ${id}: пустой ответ`);
@@ -218,6 +219,10 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
   }
   return null;
 }
+
+let lastServed = null;
+/** Кто реально ответил последним: провайдер, модель, когда. */
+export const servedInfo = () => lastServed;
 
 /** Состояние провайдеров для админки: ключи, паузы, нагрузка. */
 export function aiStatus(now = Date.now()) {

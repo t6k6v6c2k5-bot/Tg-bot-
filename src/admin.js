@@ -1,6 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { config } from './config.js';
+import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, _resetOwner } from './owner.js';
 import { allChats, chat, save, dayKey } from './store.js';
 import { app, say } from './respond.js';
 import { runInitiative, pickNeedleTarget, pickPokeTarget, dailyCap, engagement } from './life.js';
@@ -11,31 +10,8 @@ import { members, statsText } from './analysis.js';
 // Админка в личке с ботом: доступ только по Telegram-ID администратора, все действия — кнопками.
 
 const H = 3600_000;
-const FILE = path.join(config.dataDir, 'admin.json');
 
 // ---------- доступ ----------
-let bound = null; // ID, привязанные при первом входе
-
-function loadBound() {
-  if (bound) return bound;
-  try {
-    bound = new Set(JSON.parse(fs.readFileSync(FILE, 'utf8')).ids || []);
-  } catch {
-    bound = new Set();
-  }
-  return bound;
-}
-
-function bind(id) {
-  loadBound().add(id);
-  try {
-    fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify({ ids: [...bound] }));
-  } catch (e) {
-    console.error('[admin] не удалось сохранить привязку:', e.message);
-  }
-  console.log(`[admin] админ привязан к Telegram-ID ${id}`);
-}
 
 /**
  * Админ — тот, чей числовой ID задан в ADMIN_IDS или уже привязан.
@@ -44,15 +20,15 @@ function bind(id) {
  */
 export function isAdmin(from) {
   if (!from?.id) return false;
-  if (config.adminIds.includes(from.id) || loadBound().has(from.id)) return true;
-  if (!config.adminIds.length && !loadBound().size && config.adminUsername && from.username?.toLowerCase() === config.adminUsername) {
-    bind(from.id);
+  if (isAdminId(from.id)) return true;
+  if (!hasAdmins() && config.adminUsername && from.username?.toLowerCase() === config.adminUsername) {
+    bindAdmin(from.id);
     return true;
   }
   return false;
 }
 
-export const _resetAdminForTests = () => (bound = null);
+export const _resetAdminForTests = _resetOwner;
 
 // ---------- тексты ----------
 const ago = (ms) => {
@@ -132,7 +108,7 @@ export function mainMenu(now = Date.now()) {
   const dms = allChats().filter(([id]) => id > 0).length;
   return {
     text: `🛠 Админка Бати\nГрупповых чатов: ${g.length} (активных за сутки: ${active}). Личных диалогов: ${dms}.`,
-    kb: { inline_keyboard: [[btn('📋 Чаты', 'a:l')], [btn('🤖 ИИ и ключи', 'a:ai')], [btn('🔄 Обновить', 'a:m')]] },
+    kb: { inline_keyboard: [[btn('📋 Чаты', 'a:l')], [btn('🤖 ИИ и ключи', 'a:ai')], [btn(ownerSerious() ? '🎩 Со мной: серьёзно' : '🎭 Со мной: как обычно', 'a:os')], [btn('🔄 Обновить', 'a:m')]] },
   };
 }
 
@@ -215,6 +191,12 @@ export async function onAction(ctx) {
   try {
     if (cmd === 'm') { await ack(); const m = mainMenu(); return await bypass(ctx, m.text, m.kb); }
     if (cmd === 'l') { await ack(); await fillTitles(); const m = listMenu(); return await bypass(ctx, m.text, m.kb); }
+    if (cmd === 'os') {
+      setOwnerSerious(!ownerSerious());
+      await ack(ownerSerious() ? 'Со мной без шуток (если сам не попрошу)' : 'Со мной как со всеми');
+      const m = mainMenu();
+      return await bypass(ctx, m.text, m.kb);
+    }
     if (cmd === 'ai') {
       await ack();
       return await bypass(ctx, aiText(aiStatus()), { inline_keyboard: [[btn('🔄 Обновить', 'a:ai'), btn('⬅️ Назад', 'a:m')]] });

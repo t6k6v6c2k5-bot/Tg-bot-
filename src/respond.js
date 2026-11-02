@@ -7,7 +7,9 @@ import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji, exchangeLength } from './variety.js';
 import { bestOf } from './wit.js';
-import { wantsSerious, isAbuse } from './filter.js';
+import { wantsSerious, isAbuse, wantsJoke, isModelQuestion } from './filter.js';
+import { isAdminId, ownerSerious } from './owner.js';
+import { modelAnswer } from './about.js';
 import { logSay } from './log.js';
 import { transcript } from './prompts.js';
 import { bodyJokeAboutPerson, bodyRequestNote, usesDiagnosisAsSlur, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
@@ -79,7 +81,14 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const angle = pickAngle(st);
     const lastText = st.history[st.history.length - 1]?.text || '';
     // «без подколов / по делу» — отвечаем серьёзно и по существу, без шуточного отбора вариантов
-    const serious = direct && wantsSerious(lastText);
+    const lastMsg = st.history[st.history.length - 1];
+    const fromOwner = direct && lastMsg && !lastMsg.bot && isAdminId(lastMsg.uid);
+    if (fromOwner && isModelQuestion(lastText) && replyTo !== undefined) {
+      await say(chatId, st, modelAnswer(), replyTo);
+      return true;
+    }
+    const ownerMode = fromOwner && ownerSerious() && !wantsJoke(lastText);
+    const serious = direct && (wantsSerious(lastText) || ownerMode);
     // тролль ругается на бота: отвечаем, только если вышло остро; слабое лучше промолчать
     const abusive = direct && !serious && isAbuse(lastText);
     // «Умная» модель (20 запросов в сутки на проект на бесплатном тарифе!) — только для вопросов, где она нужна:
