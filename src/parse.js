@@ -7,7 +7,11 @@ export const REACTIONS = new Set(
 // ИИ отвечает одним из: SKIP | REACT:<эмодзи> | текст
 export function parseReply(raw, { maxLines = 4, maxChars = config.maxReplyChars } = {}) {
   if (!raw) return { type: 'skip' };
-  let t = raw.trim().replace(/^["«“]+|["»”]+$/g, '').trim();
+  let t = raw.trim();
+  // кавычки срезаем, только если они парой обрамляют ВЕСЬ текст («…» целиком); иначе получится осиротевшая «»»
+  const PAIRS = { '"': '"', '«': '»', '“': '”' };
+  const close = PAIRS[t[0]];
+  if (close && t.length > 1 && t.at(-1) === close && !t.slice(1, -1).includes(close)) t = t.slice(1, -1).trim();
   t = t.replace(/^(?:Батя|Бот)\s*:\s*/i, ''); // некоторые модели начинают с «Батя:»
   if (!t || /^\W*SKIP\b/i.test(t)) return { type: 'skip' };
   // отказ по несдвигаемым линиям: «REFUSE: короткая фраза в образе»

@@ -259,7 +259,7 @@ export async function sendDigest(chatId, st) {
 }
 
 export async function sendRevive(chatId, st) {
-  const res = await generate({ system: system(st, app.name), prompt: revivePrompt(st.history), maxTokens: 150, temperature: 1 });
+  const res = await generate({ system: system(st, app.name), prompt: revivePrompt(st.history), maxTokens: 150, temperature: 1, tier: 'smart' });
   if (!res) return false;
   const poll = res.text.match(/^POLL:\s*(.+)$/im);
   if (poll) {

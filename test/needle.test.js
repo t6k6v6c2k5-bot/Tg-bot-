@@ -69,7 +69,9 @@ test('тег: по @нику или через text_mention для людей б
   assert.equal(withMention({ name: 'Ваня', username: 'vanya' }, 1, 'В понедельник начнёшь?').text, '@vanya, в понедельник начнёшь?'); // регистр после тега
   assert.equal(withMention({ name: 'Ваня', username: 'vanya' }, 1, 'Ты где?').text, '@vanya, ты где?');
   assert.equal(withMention({ name: 'Ваня', username: 'vanya' }, 1, 'СДВГ у тебя, что ли?').text, '@vanya, СДВГ у тебя, что ли?'); // аббревиатуры не трогаем
-  assert.equal(withMention({ name: 'Ваня', username: 'vanya' }, 1, 'Ваня, ты где?').text, '@vanya, Ваня, ты где?'); // имя адресата не трогаем
+  // модель начинает с имени — с тегом получится дубль, имя убираем
+  assert.equal(withMention({ name: 'Дарина', username: 'Tatoshkd' }, 5, 'Дарина, сбрасывать фотки грязи — это смело.').text, '@Tatoshkd, сбрасывать фотки грязи — это смело.');
+  assert.equal(withMention({ name: 'Ваня', username: 'vanya' }, 1, 'Ваня: ты где?').text, '@vanya, ты где?');
 });
 
 test('просьба отстать распознаётся', () => {
@@ -110,4 +112,12 @@ test('инициатива «подкол»: тегает человека, фи
   assert.match(sent[0].t, /^@vanya, /);
   assert.ok(st.needleLast['1'] > 0 && st.lastNeedleAt > 0 && st.roastLast['1'] > 0);
   assert.equal(pickNeedleTarget(st, Date.now()), null); // сутки к нему не цепляемся
+});
+
+test('промпт подкола требует опираться на реальные слова человека', async () => {
+  const { needlePrompt } = await import('../src/prompts.js');
+  const p = needlePrompt({ name: 'Дарина', handle: '@Tatoshkd', facts: [], lines: ['скидываю фотки грязи'], history: [] });
+  assert.match(p, /дословно/);
+  assert.match(p, /Нельзя приписывать/);
+  assert.match(p, /скидываю фотки грязи/);
 });

@@ -7,6 +7,7 @@ import { factsAbout } from './memory.js';
 import { analysisContext } from './analysis.js';
 import { pickAngle, repetition, trimEmoji, exchangeLength } from './variety.js';
 import { bestOf } from './wit.js';
+import { wantsSerious } from './filter.js';
 import { logSay } from './log.js';
 import { transcript } from './prompts.js';
 import { bodyJokeAboutPerson, bodyRequestNote, REFUSALS, DECLINES, NO_IDEAS, pickLine } from './safety.js';
@@ -68,6 +69,8 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const direct = mode === 'direct' || mode === 'critic';
     const angle = pickAngle(st);
     const lastText = st.history[st.history.length - 1]?.text || '';
+    // «без подколов / по делу» — отвечаем серьёзно и по существу, без шуточного отбора вариантов
+    const serious = direct && wantsSerious(lastText);
     const dataBlock = direct ? [analysisContext(st, lastText), bodyRequestNote(lastText, st)].filter(Boolean).join('\n\n') : '';
     // Затянувшийся обмен с одним человеком: сначала ставим точку одной фразой, потом просто не продолжаем
     const chain = direct ? exchangeLength(st) : 0;
@@ -77,9 +80,10 @@ export async function respond(chatId, st, { mode, replyTo }) {
       return false;
     }
     const endNote = chain >= 3 ? `\n\nВНИМАНИЕ: вы с этим человеком уже обменялись ${chain} репликами подряд. Заверши обмен ОДНОЙ короткой фразой-точкой с юмором. Формат REACT здесь запрещён, SKIP тоже: нужна именно текстовая реплика. Не разгоняй разговор дальше и не задавай встречных вопросов.` : '';
-    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock) + endNote;
+    const seriousNote = serious ? '\n\nВНИМАНИЕ: человек прямо просит без подколов и шуток. Ответь серьёзно, по существу и по делу, без иронии, сарказма и подначек. Не припоминай ему его слова.' : '';
+    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock) + endNote + seriousNote;
     // Остроумие: без блока данных (аналитика, пересказы) — пишем варианты и выбираем лучший
-    const useWit = !dataBlock && mode !== 'critic';
+    const useWit = !dataBlock && mode !== 'critic' && !serious;
     const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
     const ask = (banned = []) =>
       useWit

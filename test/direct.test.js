@@ -59,3 +59,21 @@ test('режим критики: один простой ответ, без «4 
   assert.ok(prompts.every((p) => !/ровно 4 РАЗНЫХ/.test(p)));
   assert.match(sent[0], /перемудрил/);
 });
+
+test('«без подколов, по сути»: серьёзный ответ без отбора шуток и с напоминанием модели', async () => {
+  reset();
+  const prompts = [];
+  globalThis.fetch = async (url, opts) => (prompts.push(promptOf(opts)), reply('Если по сути: бот работает, лимиты Gemini упираются в бесплатный тариф.'));
+  await respond(1, mkst('Это хорошо давай по сути без подколов'), { mode: 'direct', replyTo: 1 });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /по сути/);
+  assert.ok(prompts.every((p) => /прямо просит без подколов/.test(p)));
+  assert.ok(prompts.every((p) => !/ровно 4 РАЗНЫХ/.test(p)));
+});
+
+test('в личной переписке бот честно говорит, что групповых чатов не видит', async () => {
+  const { system } = await import('../src/prompts.js');
+  const st = { ...mkst('привет'), chatType: 'private' };
+  assert.match(system(st, 'Батя'), /ЛИЧНОЙ ПЕРЕПИСКЕ/);
+  assert.doesNotMatch(system({ ...st, chatType: 'supergroup' }, 'Батя'), /ЛИЧНОЙ ПЕРЕПИСКЕ/);
+});

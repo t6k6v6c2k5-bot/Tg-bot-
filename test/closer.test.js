@@ -61,3 +61,9 @@ test('обычная реплика боту без точки получает 
   await processMessage(ctx, st, msg('расскажи ещё что-то', 7), { text: 'расскажи ещё что-то' });
   assert.equal(sent.length, 1);
 });
+
+test('просьба ответить серьёзно распознаётся', async () => {
+  const { wantsSerious } = await import('../src/filter.js');
+  for (const t of ['давай по сути без подколов', 'без шуток пожалуйста', 'серьёзно, что думаешь?', 'не шути', 'ответь по делу']) assert.ok(wantsSerious(t), t);
+  for (const t of ['расскажи анекдот', 'что на ужин', 'сделай подкол Ване']) assert.ok(!wantsSerious(t), t);
+});

@@ -145,6 +145,9 @@ function lowerFirst(t, name = '') {
 export function withMention(u, uid, text) {
   if (u.username) {
     const h = '@' + u.username;
+    // модель часто начинает с имени: «Дарина, …» — вместе с тегом получилось бы «@ник, Дарина, …», имя убираем
+    const dup = new RegExp('^' + u.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[,:—–-]?\\s*', 'iu');
+    if (!text.toLowerCase().includes(h.toLowerCase())) text = text.replace(dup, '');
     return { text: text.toLowerCase().includes(h.toLowerCase()) ? text : `${h}, ${lowerFirst(text, u.name)}` };
   }
   const name = u.name;
@@ -214,6 +217,7 @@ async function ask(st, prompt, maxTokens = 180, opts) {
     direct: false,
     reject: (t) => bodyJokeAboutPerson(t, st) || repetition(t, st).length > 0,
     maxTokens: Math.round(maxTokens / 2),
+    tier: 'smart',
     parseOpts: opts,
   });
   if (!res) return null;
