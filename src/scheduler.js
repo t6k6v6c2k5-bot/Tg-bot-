@@ -4,6 +4,7 @@ import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
 import { respond } from './respond.js';
 import { pickInitiative, runInitiative, trackIgnore } from './life.js';
+import { refreshRoster, rosterDue } from './roster.js';
 
 async function tick() {
   const now = Date.now();
@@ -13,6 +14,7 @@ async function tick() {
     if (chatId > 0) continue; // только группы
     try {
       trackIgnore(st, now);
+      if (rosterDue(st, now)) await refreshRoster(chatId, st);
       if (st.settings.mutedUntil > now) continue;
 
       // Итоги дня — раз в сутки

@@ -7,6 +7,7 @@ import { app, say, roast } from './respond.js';
 import { LEVELS } from './filter.js';
 import { emptyMemory } from './memory.js';
 import { lifeStatus } from './life.js';
+import { dossier, statsText, detectTargets } from './analysis.js';
 
 export const parseCommand = (text) => {
   const m = text.match(/^\/([\p{L}0-9_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/u);
@@ -24,6 +25,7 @@ const ALIAS = {
   оживи: 'revive', revive: 'revive',
   тон: 'tone', tone: 'tone',
   жизнь: 'life', life: 'life',
+  разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
@@ -39,6 +41,8 @@ export const BOT_COMMANDS = [
   { command: 'revive', description: 'Оживить чат' },
   { command: 'tone', description: 'Тон подколов: soft / hard' },
   { command: 'taboo', description: 'Табу-темы' },
+  { command: 'analyze', description: 'Разбор участника: /analyze @ник' },
+  { command: 'stats', description: 'Статистика чата' },
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
@@ -56,6 +60,8 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /табу <тема> — запретная тема, /табу_список, /табу_сброс
 /чтопомнишь — что я помню о тебе
 /забудь — забыть тебя и не запоминать (повтор — вернуть); /забудь_всё — стереть память чата
+/разбор @ник — что я знаю о человеке и как он ведёт себя в чате
+/статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата`;
 
@@ -112,6 +118,25 @@ async function exec(ctx, key, cmd, message) {
       save();
       await reply(st.optOut[from.id] ? 'Принято, тебя не трогаю. Повторная команда вернёт всё назад.' : 'Ну всё, ты в игре 😈');
       break;
+    case 'stats':
+      await reply(`Статистика чата:\n${statsText(st, now)}`);
+      break;
+    case 'analyze': {
+      const uid = resolveTarget(st, message, cmd.args) || detectTargets(st, cmd.args)[0];
+      if (!uid || String(uid) === String(app.id)) return void (await reply('Кого разбирать? Ответь на его сообщение или напиши /разбор @ник (или имя).'));
+      const data = dossier(st, uid, now);
+      if (st.memOff[uid]) return void (await reply(data));
+      const res = await generate({
+        system: system(st, app.name, { long: true }),
+        prompt: `ДАННЫЕ ЧАТА (посчитано программой, точно):\n${data}\n\nЗадача: сделай короткий дружеский разбор этого участника для чата (до 5 строк): чем живёт в чате (темы, привычки, фирменные фразы), когда активен, с кем общается. Опирайся только на данные выше. Без диагнозов, догадок о личной жизни и обидных выводов; ироничный комплимент в конце.`,
+        maxTokens: 450,
+        high: true,
+        tier: 'smart',
+      });
+      const r = res && parseReply(res.text, { maxLines: 6, maxChars: 800 });
+      await reply(r?.type === 'text' ? r.text : data);
+      break;
+    }
     case 'life': {
       if (/^(вкл|on|да)/i.test(cmd.args)) st.settings.autonomy = true;
       else if (/^(выкл|off|нет)/i.test(cmd.args)) st.settings.autonomy = false;
@@ -195,6 +220,11 @@ export async function sendDigest(chatId, st) {
   const res = await generate({ system: system(st, app.name), prompt: digestPrompt(lines), maxTokens: 500, temperature: 0.8 });
   if (!res || /^\W*SKIP\b/i.test(res.text)) return false;
   await say(chatId, st, res.text.slice(0, 1500));
+  // «память дней»: потом по ней Батя отвечает на «о чём вчера говорили»
+  const days = (st.memory.days ||= {});
+  days[today] = res.text.slice(0, 1200);
+  for (const d of Object.keys(days).sort().slice(0, -30)) delete days[d];
+  save();
   return true;
 }
 

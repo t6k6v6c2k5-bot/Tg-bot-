@@ -4,6 +4,7 @@ import { parseReply } from './parse.js';
 import { system, chatPrompt, roastPrompt } from './prompts.js';
 import { remember } from './store.js';
 import { factsAbout } from './memory.js';
+import { analysisContext } from './analysis.js';
 
 export const app = { telegram: null, username: '', id: 0, name: 'Бот' };
 
@@ -53,8 +54,13 @@ export async function respond(chatId, st, { mode, replyTo }) {
     const direct = mode === 'direct';
     const res = await generate({
       system: system(st, app.name, { long: direct }),
-      prompt: chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt),
-      maxTokens: direct ? 450 : 100,
+      prompt: chatPrompt(
+        st.history,
+        mode,
+        direct ? 30 : config.historyInPrompt,
+        direct ? analysisContext(st, st.history[st.history.length - 1]?.text || '') : '',
+      ),
+      maxTokens: direct ? 500 : 100,
       high: direct,
       tier: direct ? 'smart' : 'fast',
     });

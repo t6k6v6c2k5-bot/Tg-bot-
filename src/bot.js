@@ -1,12 +1,13 @@
 import { Telegraf } from 'telegraf';
 import { config } from './config.js';
-import { chat, remember, save } from './store.js';
+import { chat, remember, save, touchUser } from './store.js';
 import { decide, isDirect, cheapReaction } from './filter.js';
 import { app, respond, react } from './respond.js';
 import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
 import { watchQuestion } from './scheduler.js';
 import { learn } from './memory.js';
 import { onHumanMessage, noteHour } from './life.js';
+import { refreshRoster, ingestNonText, onChatMember } from './roster.js';
 import { hourOf } from './store.js';
 
 export async function createBot() {
@@ -36,7 +37,11 @@ export async function createBot() {
       name: msg.from.first_name || msg.from.username || 'аноним',
       text,
       ts: Date.now(),
+      replyTo: msg.reply_to_message?.from?.is_bot ? undefined : msg.reply_to_message?.from?.id,
     });
+    // упомянутые через text_mention известны, даже если ещё не писали
+    for (const e of msg.entities || []) if (e.type === 'text_mention') touchUser(st, e.user);
+    if (ctx.chat.type !== 'private' && !st.rosterAt) refreshRoster(chatId, st);
 
     const now = Date.now();
     const replyToBot = msg.reply_to_message?.from?.id === app.id;
@@ -76,6 +81,10 @@ export async function createBot() {
 
     if (!isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
   });
+
+  // всё, что не текст: стикеры, фото, голосовые, вход/выход людей (текст сюда не доходит)
+  bot.on('message', (ctx) => ingestNonText(ctx));
+  bot.on('chat_member', (ctx) => onChatMember(ctx));
 
   bot.catch((e) => console.error('[bot]', e));
   return bot;

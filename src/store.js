@@ -4,7 +4,7 @@ import { config } from './config.js';
 import { emptyMemory } from './memory.js';
 
 const FILE = path.join(config.dataDir, 'state.json');
-const MAX_HISTORY = 400;
+const MAX_HISTORY = 1500;
 const chats = new Map();
 let saveTimer = null;
 
@@ -22,6 +22,8 @@ const fresh = () => ({
   lastDigestDay: '',
   lastDigestCmdAt: 0,
   memory: emptyMemory(),
+  memberCount: 0, // сколько всего людей в чате (по данным Telegram)
+  rosterAt: 0, // когда последний раз обновляли список админов
   memOff: {}, // uid -> true (/забудь): не запоминать этого человека
   initLog: [], // ts самостоятельных инициатив за сутки
   lastInitAt: 0,
@@ -73,10 +75,28 @@ export function saveNow() {
   }
 }
 
+// Человек известен из служебных данных (админ, вошёл, упомянут), хотя мог ещё не писать
+export function touchUser(st, user, extra = {}) {
+  if (!user || user.is_bot) return;
+  const u = (st.users[user.id] ||= {});
+  u.name = user.first_name || user.username || u.name || 'аноним';
+  u.username = user.username || u.username;
+  Object.assign(u, extra);
+  save();
+}
+
 export function remember(st, entry) {
   st.history.push(entry);
   if (st.history.length > MAX_HISTORY) st.history.splice(0, st.history.length - MAX_HISTORY);
-  if (entry.uid && !entry.bot) st.users[entry.uid] = { name: entry.name, username: entry.username };
+  if (entry.uid && !entry.bot) {
+    const u = (st.users[entry.uid] ||= {});
+    u.name = entry.name;
+    u.username = entry.username || u.username;
+    u.firstSeen ||= entry.ts;
+    u.lastSeen = entry.ts;
+    u.msgs = (u.msgs || 0) + 1;
+    u.left = false;
+  }
   save();
 }
 

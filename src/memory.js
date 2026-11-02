@@ -20,7 +20,7 @@ const WORDS =
   'дети|детей|детям|гей|лет|год|доход|долг|парень|выборы|выборов';
 const SENSITIVE = new RegExp(`(?<!\\p{L})(?:(?:${STEMS})|(?:${WORDS})(?!\\p{L}))`, 'iu');
 
-export const emptyMemory = () => ({ users: {}, memes: [], style: '' });
+export const emptyMemory = () => ({ users: {}, memes: [], style: '', days: {} });
 
 export function cleanFact(raw) {
   if (typeof raw !== 'string') return null;
