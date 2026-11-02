@@ -17,7 +17,7 @@ export const config = {
   botToken: env.BOT_TOKEN,
   geminiKeys,
   // можно списком через запятую: первая — основная, остальные — запасные
-  geminiModels: (env.GEMINI_MODEL || 'gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.8-flash')
+  geminiModels: (env.GEMINI_MODEL || 'gemini-3.5-flash-lite,gemini-flash-lite-latest,gemma-4-26b-a4b-it,gemini-3.8-flash')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
