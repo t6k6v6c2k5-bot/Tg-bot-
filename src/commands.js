@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { generate } from './ai.js';
+import { logSay } from './log.js';
 import { parseReply } from './parse.js';
 import { system, digestPrompt, revivePrompt } from './prompts.js';
 import { chat, dayKey, save } from './store.js';
@@ -247,6 +248,7 @@ export async function sendDigest(chatId, st) {
     .join('\n');
   const res = await generate({ system: system(st, app.name), prompt: digestPrompt(lines), maxTokens: 500, temperature: 0.8 });
   if (!res || /^\W*SKIP\b/i.test(res.text)) return false;
+  logSay({ kind: 'итоги дня', provider: res.provider, question: `${msgs.length} сообщений за день`, answer: res.text });
   await say(chatId, st, res.text.slice(0, 1500));
   // «память дней»: потом по ней Батя отвечает на «о чём вчера говорили»
   const days = (st.memory.days ||= {});
@@ -263,6 +265,7 @@ export async function sendRevive(chatId, st) {
   if (poll) {
     const [q, ...opts] = poll[1].split('|').map((s) => s.trim()).filter(Boolean);
     if (q && opts.length >= 2) {
+      logSay({ kind: 'оживление:опрос', provider: res.provider, question: '', answer: `${q} | ${opts.join(' | ')}` });
       await app.telegram.sendPoll(chatId, q.slice(0, 250), opts.slice(0, 4).map((o) => o.slice(0, 100)), { is_anonymous: true });
       st.lastReviveAt = Date.now();
       return true;
@@ -270,6 +273,7 @@ export async function sendRevive(chatId, st) {
   }
   const r = parseReply(res.text);
   if (r.type !== 'text') return false;
+  logSay({ kind: 'оживление', provider: res.provider, question: '', answer: r.text });
   await say(chatId, st, r.text);
   st.lastReviveAt = Date.now();
   return true;
