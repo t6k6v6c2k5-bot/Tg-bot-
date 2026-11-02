@@ -12,7 +12,7 @@ export const config = {
   grokKey: env.GROK_API_KEY,
   grokModel: env.GROK_MODEL || 'grok-4-fast',
   // «умный» уровень для прямых вопросов, дальше запасные из geminiModels
-  geminiSmartModels: (env.GEMINI_SMART_MODEL || 'gemini-3.5-flash,gemini-3.8-flash')
+  geminiSmartModels: (env.GEMINI_SMART_MODEL || 'gemini-3.5-flash')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),

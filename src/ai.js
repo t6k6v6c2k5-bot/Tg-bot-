@@ -2,8 +2,10 @@ import { config } from './config.js';
 
 // Gemini — основной мозг, Grok — подколы. Если один упёрся в лимит, берём другой; если оба — молчим.
 
-const TIMEOUT_MS = 15_000;
+const TIMEOUT_MS = 12_000;
+const TOTAL_BUDGET_MS = 30_000; // дольше этого весь перебор моделей не тянем
 const cooldown = {}; // ключ «провайдер:модель» -> до какого времени она «отдыхает»
+const fails = {}; // ключ -> подряд ошибок (пауза растёт: 1, 2, 4, 8, 10 мин)
 const calls = []; // ts вызовов за последнюю минуту
 
 class ProviderError extends Error {
@@ -119,18 +121,25 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
   const candidates = names
     .flatMap((name) => providers[name].models(tier).map((model) => ({ name, model })))
     .filter((c) => !seen.has(`${c.name}:${c.model}`) && seen.add(`${c.name}:${c.model}`));
+  const started = Date.now();
   for (const { name, model } of candidates) {
     const key = `${name}:${model}`;
     if ((cooldown[key] || 0) > Date.now()) continue;
+    if (Date.now() - started > TOTAL_BUDGET_MS) break;
     calls.push(Date.now());
     try {
       const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json, media })).trim();
-      if (text) return { text, provider: key };
+      if (text) {
+        fails[key] = 0;
+        return { text, provider: key };
+      }
       console.log(`[ai] ${key}: пустой ответ`);
     } catch (e) {
-      const limited = e.status === 429 || e.status >= 500 || e.status === 0;
-      cooldown[key] = Date.now() + (limited ? e.retryAfterMs || 60_000 : 10 * 60_000);
-      console.warn(`[ai] ${key} упал (${e.message.replace(/\s+/g, ' ').slice(0, 160)}); пауза до ${new Date(cooldown[key]).toISOString()}`);
+      const transient = e.status === 429 || e.status >= 500 || e.status === 0;
+      fails[key] = (fails[key] || 0) + 1;
+      const base = transient ? e.retryAfterMs || 60_000 : 10 * 60_000;
+      cooldown[key] = Date.now() + Math.min(10 * 60_000, base * 2 ** (fails[key] - 1));
+      console.warn(`[ai] ${key} упал (${e.message.replace(/\s+/g, ' ').slice(0, 120)}); подряд ${fails[key]}, пауза до ${new Date(cooldown[key]).toISOString()}`);
     }
   }
   return null;
