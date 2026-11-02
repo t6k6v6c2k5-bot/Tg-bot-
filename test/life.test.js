@@ -89,8 +89,8 @@ test('кого звать: давно молчащих, не чаще раза �
 
 test('длинные ответы только по запросу', () => {
   const long = 'а\nб\nв\nг\nд\nе\nж';
-  assert.equal(parseReply(long).text.split('\n').length, 2);
-  assert.equal(parseReply(long, { maxLines: 5, maxChars: 700 }).text.split('\n').length, 5);
+  assert.equal(parseReply(long).text.split('\n').length, 4);
+  assert.equal(parseReply(long, { maxLines: 6, maxChars: 700 }).text.split('\n').length, 6);
 });
 
 test('бюджет сам растёт от отклика чата и падает от игнора (уровень 5: 10 ↔ 4)', () => {

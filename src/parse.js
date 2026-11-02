@@ -5,7 +5,7 @@ export const REACTIONS = new Set(
 );
 
 // ИИ отвечает одним из: SKIP | REACT:<эмодзи> | текст
-export function parseReply(raw, { maxLines = 2, maxChars = config.maxReplyChars } = {}) {
+export function parseReply(raw, { maxLines = 4, maxChars = config.maxReplyChars } = {}) {
   if (!raw) return { type: 'skip' };
   let t = raw.trim().replace(/^["«“]+|["»”]+$/g, '').trim();
   t = t.replace(/^(?:Батя|Бот)\s*:\s*/i, ''); // некоторые модели начинают с «Батя:»

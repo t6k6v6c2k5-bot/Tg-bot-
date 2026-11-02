@@ -11,7 +11,7 @@ let saveTimer = null;
 const fresh = () => ({
   history: [], // {id, uid, name, text, ts, bot?}
   users: {}, // uid -> {name, username}
-  settings: { activity: 3, tone: 'soft', mutedUntil: 0, autonomy: true },
+  settings: { v: 2, activity: 3, tone: 'free', mutedUntil: 0, autonomy: true, crude: 3 },
   optOut: {}, // uid -> true  (/неподкалывай)
   taboo: [],
   roastLast: {}, // uid -> ts последнего подкола/упоминания
@@ -47,7 +47,12 @@ const fresh = () => ({
 export function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    for (const [id, st] of Object.entries(raw)) chats.set(Number(id), { ...fresh(), ...st });
+    for (const [id, st] of Object.entries(raw)) {
+      const chat = { ...fresh(), ...st };
+      // v2 (по просьбе владельца): без рамок — тон «сам решает», пошлость 3; настройки людей (/неподкалывай, /забудь) не трогаем
+      if ((chat.settings.v ?? 1) < 2) Object.assign(chat.settings, { v: 2, tone: 'free', crude: 3 });
+      chats.set(Number(id), chat);
+    }
     console.log(`[store] загружено чатов: ${chats.size}`);
   } catch {
     /* первый запуск */

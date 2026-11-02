@@ -48,5 +48,5 @@ export const config = {
   mediaPerHour: num('MEDIA_PER_HOUR', 15), // не больше N разборов медиа в час на чат
   roastCooldownMs: num('ROAST_COOLDOWN_HOURS', 3) * 3600_000,
   historyInPrompt: 18,
-  maxReplyChars: 280,
+  maxReplyChars: 500,
 };

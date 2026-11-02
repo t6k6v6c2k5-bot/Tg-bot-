@@ -59,17 +59,16 @@ test('разбор ответа ИИ', () => {
   assert.deepEqual(parseReply('REACT:🔥'), { type: 'react', emoji: '🔥' });
   assert.deepEqual(parseReply('REACT:💩'), { type: 'skip' });
   assert.equal(parseReply('"Ну ты и скажешь"').text, 'Ну ты и скажешь');
-  assert.equal(parseReply('а\nб\nв').text, 'а\nб');
-  assert.ok(parseReply('я'.repeat(1000)).text.length <= 280);
+  assert.equal(parseReply('а\nб\nв\nг\nд').text, 'а\nб\nв\nг'); // длину выбирает бот: до 4 строк
+  assert.ok(parseReply('я'.repeat(1000)).text.length <= 500);
 });
 
-test('политику и войну сам не поднимает, но на прямой вопрос отвечает', () => {
+test('политика и война больше не блокируют самостоятельные реплики, горе — по-прежнему', () => {
   const pol = mk({ history: [{ text: 'а я считаю, что Крым наш', name: 'a' }] });
-  assert.ok(!canSpeakUnsolicited(pol, NOW));
-  assert.equal(decide({ direct: false, text: 'про войну', st: pol, now: NOW, rng: () => 0 }), null);
-  assert.equal(cheapReaction({ text: 'ахахах', st: pol, now: NOW, rng: () => 0 }), null);
+  assert.ok(canSpeakUnsolicited(pol, NOW)); // бот сам решает, вступать ли
   assert.equal(decide({ direct: true, text: 'батя, чей Крым?', st: pol, now: NOW }), 'direct');
-  assert.ok(canSpeakUnsolicited(mk({ history: [{ text: 'выбор пиццы сложный', name: 'a' }] }), NOW)); // «выбор» не политика
+  const grief = mk({ history: [{ text: 'у меня вчера умерла бабушка', name: 'a' }] });
+  assert.ok(!canSpeakUnsolicited(grief, NOW)); // не стёбся над бедой: это остаётся
 });
 
 test('протечка рассуждений и префикс «Батя:» отсекаются', () => {
