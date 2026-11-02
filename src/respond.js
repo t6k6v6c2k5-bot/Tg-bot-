@@ -43,7 +43,10 @@ export async function react(chatId, messageId, emoji) {
 
 // Ступень 2: идём в ИИ, он может ответить SKIP
 export async function respond(chatId, st, { mode, replyTo }) {
-  if (busy.has(chatId)) return false;
+  if (busy.has(chatId)) {
+    console.log(`[${mode}] чат занят, пропуск`);
+    return false;
+  }
   busy.add(chatId);
   try {
     const direct = mode === 'direct';
@@ -53,8 +56,12 @@ export async function respond(chatId, st, { mode, replyTo }) {
       maxTokens: 100,
       high: direct,
     });
-    if (!res) return false;
+    if (!res) {
+      console.log(`[${mode}] ИИ не ответил`);
+      return false;
+    }
     const r = parseReply(res.text);
+    console.log(`[${mode}] ${res.provider} -> ${r.type}`);
     if (r.type === 'skip') {
       console.log(`[${mode}] SKIP (${res.provider})`);
       return false;

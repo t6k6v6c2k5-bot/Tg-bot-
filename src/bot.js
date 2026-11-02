@@ -47,6 +47,7 @@ export async function createBot() {
       });
 
     const mode = decide({ direct, text, st, now });
+    console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);
     if (mode) {
       await respond(chatId, st, { mode, replyTo: isPrivate ? undefined : msg.message_id });
       return;
