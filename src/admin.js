@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, _resetOwner } from './owner.js';
+import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, botOff, setBotOff, _resetOwner } from './owner.js';
 import { allChats, chat, save, dayKey } from './store.js';
 import { app, say } from './respond.js';
 import { runInitiative, pickNeedleTarget, pickPokeTarget, dailyCap, engagement } from './life.js';
@@ -107,8 +107,8 @@ export function mainMenu(now = Date.now()) {
   const active = g.filter(([, st]) => now - lastHuman(st) < 24 * H).length;
   const dms = allChats().filter(([id]) => id > 0).length;
   return {
-    text: `🛠 Админка Бати\nГрупповых чатов: ${g.length} (активных за сутки: ${active}). Личных диалогов: ${dms}.`,
-    kb: { inline_keyboard: [[btn('📋 Чаты', 'a:l')], [btn('🤖 ИИ и ключи', 'a:ai')], [btn(ownerSerious() ? '🎩 Со мной: серьёзно' : '🎭 Со мной: как обычно', 'a:os')], [btn('🔄 Обновить', 'a:m')]] },
+    text: `🛠 Админка Бати${botOff() ? ' (БОТ ВЫКЛЮЧЕН: молчит везде)' : ''}\nГрупповых чатов: ${g.length} (активных за сутки: ${active}). Личных диалогов: ${dms}.`,
+    kb: { inline_keyboard: [[btn('📋 Чаты', 'a:l')], [btn('🤖 ИИ и ключи', 'a:ai')], [btn(botOff() ? '🔴 Бот выключен — включить' : '🟢 Бот включён — выключить', 'a:off')], [btn(ownerSerious() ? '🎩 Со мной: серьёзно' : '🎭 Со мной: как обычно', 'a:os')], [btn('🔄 Обновить', 'a:m')]] },
   };
 }
 
@@ -191,6 +191,12 @@ export async function onAction(ctx) {
   try {
     if (cmd === 'm') { await ack(); const m = mainMenu(); return await bypass(ctx, m.text, m.kb); }
     if (cmd === 'l') { await ack(); await fillTitles(); const m = listMenu(); return await bypass(ctx, m.text, m.kb); }
+    if (cmd === 'off') {
+      setBotOff(!botOff());
+      await ack(botOff() ? 'Бот выключен: молчит везде' : 'Бот включён');
+      const m = mainMenu();
+      return await bypass(ctx, m.text, m.kb);
+    }
     if (cmd === 'os') {
       setOwnerSerious(!ownerSerious());
       await ack(ownerSerious() ? 'Со мной без шуток (если сам не попрошу)' : 'Со мной как со всеми');
@@ -285,13 +291,19 @@ export async function onAdminMessage(ctx) {
   const msg = ctx.message;
   if (ctx.chat?.type !== 'private' || !msg?.text) return false;
   const text = msg.text.trim();
-  const isCmd = /^\/(?:admin|админ|панель|cancel)(?:@\w+)?$/iu.test(text);
+  const isCmd = /^\/(?:admin|админ|панель|cancel|off|on|выкл|вкл)(?:@\w+)?$/iu.test(text);
   if (!isCmd && !sessions.has(msg.from.id)) return false; // обычный разговор — не наше дело
   if (!isAdmin(msg.from)) return false; // чужим не отвечаем особым образом: пойдёт как обычное сообщение
 
   if (/^\/cancel/i.test(text)) {
     sessions.delete(msg.from.id);
     await ctx.reply('Отменил.');
+    return true;
+  }
+  if (/^\/(?:off|выкл)/iu.test(text) || /^\/(?:on|вкл)/iu.test(text)) {
+    const off = /^\/(?:off|выкл)/iu.test(text);
+    setBotOff(off);
+    await ctx.reply(off ? '🔴 Бот выключен: молчу везде, сам ничего не делаю. Включить: /вкл' : '🟢 Бот включён.');
     return true;
   }
   if (isCmd) {

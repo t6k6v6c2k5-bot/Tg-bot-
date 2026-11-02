@@ -6,6 +6,7 @@ import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
 import { ingestNonText, onChatMember } from './roster.js';
 import { processMessage } from './pipeline.js';
 import { onAdminMessage, onAction } from './admin.js';
+import { botOff } from './owner.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -25,6 +26,7 @@ export async function createBot() {
     const text = msg.text;
 
     // Команды (кириллические тоже: Telegram их не размечает, поэтому разбираем сами)
+    if (botOff()) return; // выключен: молчим, команды тоже
     const cmd = parseCommand(text);
     if (cmd && (await handleCommand(ctx, cmd, msg))) return;
 

@@ -41,3 +41,13 @@ test('ответ про модель берётся из реальных дан
   assert.match(a, /Gemini/);
   assert.match(a, /abcdef1/);
 });
+
+test('выключатель бота', async () => {
+  const { botOff, setBotOff } = await import('../src/owner.js');
+  assert.equal(botOff(), false);
+  setBotOff(true);
+  assert.equal(botOff(), true);
+  assert.match(mainMenu().text, /ВЫКЛЮЧЕН/);
+  setBotOff(false);
+  assert.equal(botOff(), false);
+});

@@ -10,9 +10,9 @@ function load() {
   if (state) return state;
   try {
     const j = JSON.parse(fs.readFileSync(file(), 'utf8'));
-    state = { ids: new Set(j.ids || []), serious: j.serious !== false };
+    state = { ids: new Set(j.ids || []), serious: j.serious !== false, off: j.off === true };
   } catch {
-    state = { ids: new Set(), serious: true };
+    state = { ids: new Set(), serious: true, off: false };
   }
   return state;
 }
@@ -20,7 +20,7 @@ function load() {
 function persist() {
   try {
     fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify({ ids: [...state.ids], serious: state.serious }));
+    fs.writeFileSync(file(), JSON.stringify({ ids: [...state.ids], serious: state.serious, off: state.off }));
   } catch (e) {
     console.error('[admin] не удалось сохранить:', e.message);
   }
@@ -39,6 +39,13 @@ export function bindAdmin(id) {
 export const ownerSerious = () => load().serious;
 export function setOwnerSerious(v) {
   load().serious = Boolean(v);
+  persist();
+}
+
+/** Полный выключатель: бот молчит везде и ничего не делает сам, пока админ не включит. */
+export const botOff = () => load().off === true;
+export function setBotOff(v) {
+  load().off = Boolean(v);
   persist();
 }
 

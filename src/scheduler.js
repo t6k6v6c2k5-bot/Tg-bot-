@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { botOff } from './owner.js';
 import { allChats, dayKey, hourOf, save } from './store.js';
 import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
@@ -8,6 +9,7 @@ import { pickInitiative, runInitiative, trackIgnore } from './life.js';
 import { refreshRoster, rosterDue } from './roster.js';
 
 async function tick() {
+  if (botOff()) return;
   const now = Date.now();
   const hour = hourOf(now);
   const today = dayKey(now);

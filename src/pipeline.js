@@ -8,6 +8,7 @@ import { recordFeedback, isCriticism, isLeaveMeAlone } from './taste.js';
 import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
+import { botOff } from './owner.js';
 
 /**
  * Общий путь для любого сообщения человека — текст, расшифрованное голосовое, описанное фото.
@@ -17,6 +18,7 @@ import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
  * @param {boolean} [o.record] только учёт (статистика, «жизнь»), без ответа
  */
 export async function processMessage(ctx, st, msg, { text, detect = text, record = false }) {
+  if (botOff()) return; // бот выключен админом
   const chatId = ctx.chat.id;
   const isPrivate = ctx.chat.type === 'private';
   const now = Date.now();
