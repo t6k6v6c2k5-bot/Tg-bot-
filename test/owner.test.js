@@ -51,3 +51,9 @@ test('выключатель бота', async () => {
   setBotOff(false);
   assert.equal(botOff(), false);
 });
+
+test('буквы чужих письменностей в реплике — отбрасываем', async () => {
+  const { parseReply } = await import('../src/parse.js');
+  assert.equal(parseReply('Семья полным составом: один батя с боารом').type, 'skip');
+  assert.equal(parseReply('Нормальная реплика про батю').type, 'text');
+});

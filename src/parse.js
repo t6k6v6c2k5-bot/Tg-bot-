@@ -27,6 +27,8 @@ export function parseReply(raw, { maxLines = 4, maxChars = config.maxReplyChars 
   const cyr = (t.match(/[а-яёіїєґ]/gi) || []).length;
   const lat = (t.match(/[a-z]/gi) || []).length;
   if (lat > cyr || /^(draft|answer|thinking|reasoning|teasing|note)\s*:/im.test(t)) return { type: 'skip' };
+  // сбой модели: в русский текст просочились буквы чужих письменностей («боารом») — такую реплику не отправляем
+  if (/[\p{Script=Thai}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Devanagari}]/u.test(t)) return { type: 'skip' };
   // 1–2 строки, ограничение по длине
   t = t
     .split('\n')
