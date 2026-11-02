@@ -1,7 +1,9 @@
 import { app } from './respond.js';
+import { config } from './config.js';
 import { touchUser, remember, chat, save } from './store.js';
-import { noteHour, onHumanMessage } from './life.js';
-import { hourOf } from './store.js';
+import { isDirect, LEVELS } from './filter.js';
+import { mediaKind, label, mediaBudgetOk, transcribe, describePhoto } from './media.js';
+import { processMessage } from './pipeline.js';
 
 // Telegram не отдаёт ботам полный список участников группы — только админов и их общее число.
 // Остальных Батя узнаёт, когда они пишут, шлют медиа, входят/выходят или их упоминают.
@@ -23,22 +25,9 @@ export async function refreshRoster(chatId, st) {
 
 export const rosterDue = (st, now) => now - (st.rosterAt || 0) > ROSTER_EVERY_MS;
 
-const kind = (m) =>
-  m.photo ? '[фото]'
-  : m.sticker ? `[стикер ${m.sticker.emoji || ''}]`
-  : m.voice ? '[голосовое]'
-  : m.video_note ? '[кружок]'
-  : m.video ? '[видео]'
-  : m.animation ? '[гифка]'
-  : m.audio ? '[музыка]'
-  : m.document ? '[файл]'
-  : m.poll ? `[опрос: ${m.poll.question}]`
-  : m.location ? '[геопозиция]'
-  : m.contact ? '[контакт]'
-  : null;
-
-// Не текстовые сообщения: записываем в историю (для статистики и контекста), но не отвечаем
-export function ingestNonText(ctx) {
+// Не текстовые сообщения: записываем в историю (для статистики и контекста).
+// Голосовые и кружки расшифровываем, фото иногда описываем — и тогда обрабатываем как обычный текст.
+export async function ingestNonText(ctx) {
   const m = ctx.message;
   if (!m || m.from?.is_bot || ctx.chat.type === 'private') return;
   const st = chat(ctx.chat.id);
@@ -47,21 +36,51 @@ export function ingestNonText(ctx) {
   for (const u of m.new_chat_members || []) if (!u.is_bot) touchUser(st, u, { left: false, firstSeen: Date.now() });
   if (m.left_chat_member && !m.left_chat_member.is_bot) touchUser(st, m.left_chat_member, { left: true });
 
-  const label = kind(m);
-  if (!label || !m.from) return;
-  const text = m.caption ? `${label} ${m.caption}` : label;
-  remember(st, {
+  const tag = label(m);
+  if (!tag || !m.from) return;
+  const entry = remember(st, {
     id: m.message_id,
     uid: m.from.id,
     username: m.from.username,
     name: m.from.first_name || m.from.username || 'аноним',
-    text,
+    text: m.caption ? `${tag} ${m.caption}` : tag,
     ts: Date.now(),
     replyTo: m.reply_to_message?.from?.is_bot ? undefined : m.reply_to_message?.from?.id,
   });
-  onHumanMessage(st, Date.now(), m.reply_to_message?.from?.id === app.id);
-  noteHour(st, hourOf(Date.now()));
+
+  const now = Date.now();
+  const replyToBot = m.reply_to_message?.from?.id === app.id;
+  const addressed = replyToBot || isDirect({ text: m.caption || '', botUsername: app.username, aliases: config.aliases, replyToBot });
+  let text = null;
+  try {
+    const kind = mediaKind(m);
+    if (kind === 'speech' && mediaBudgetOk(st, now)) {
+      st.mediaLog.push(now);
+      const tr = await transcribe(m);
+      if (tr) {
+        entry.text = `${tag} ${tr}`;
+        text = tr; // дальше как обычная речь: можно обратиться к Бате голосом
+      }
+    } else if (kind === 'photo' && mediaBudgetOk(st, now)) {
+      // описываем всегда, если обратились; иначе — иногда (экономим квоту)
+      if (addressed || Math.random() < Math.min(0.5, LEVELS[st.settings.activity].p * 4)) {
+        st.mediaLog.push(now);
+        const d = await describePhoto(m);
+        if (d) {
+          entry.text = `[фото: ${d}]${m.caption ? ' ' + m.caption : ''}`;
+          text = entry.text;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[media]', e.message);
+  }
+  save();
+  // без текста для разбора — только учёт (стикеры, файлы и т.п.)
+  await processMessage(ctx, st, m, { text: text ?? entry.text, detect: text && kindIsSpeech(m) ? text : m.caption || '', record: text == null && !addressed });
 }
+
+const kindIsSpeech = (m) => mediaKind(m) === 'speech';
 
 // Нужны права администратора у бота: тогда приходят события входа/выхода
 export function onChatMember(ctx) {

@@ -8,6 +8,7 @@ import { LEVELS } from './filter.js';
 import { emptyMemory } from './memory.js';
 import { lifeStatus } from './life.js';
 import { dossier, statsText, detectTargets } from './analysis.js';
+import { runCatchup, hoursFromText } from './catchup.js';
 
 export const parseCommand = (text) => {
   const m = text.match(/^\/([\p{L}0-9_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/u);
@@ -25,6 +26,7 @@ const ALIAS = {
   оживи: 'revive', revive: 'revive',
   тон: 'tone', tone: 'tone',
   жизнь: 'life', life: 'life',
+  пропустил: 'catchup', catchup: 'catchup', чтобыло: 'catchup',
   разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
@@ -41,6 +43,7 @@ export const BOT_COMMANDS = [
   { command: 'revive', description: 'Оживить чат' },
   { command: 'tone', description: 'Тон подколов: soft / hard' },
   { command: 'taboo', description: 'Табу-темы' },
+  { command: 'catchup', description: 'Что я пропустил (можно: /catchup 3)' },
   { command: 'analyze', description: 'Разбор участника: /analyze @ник' },
   { command: 'stats', description: 'Статистика чата' },
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
@@ -60,6 +63,7 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /табу <тема> — запретная тема, /табу_список, /табу_сброс
 /чтопомнишь — что я помню о тебе
 /забудь — забыть тебя и не запоминать (повтор — вернуть); /забудь_всё — стереть память чата
+/пропустил [часов] — пересказ того, что было в чате без тебя (или спроси «батя, что я пропустил?»)
 /разбор @ник — что я знаю о человеке и как он ведёт себя в чате
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
@@ -117,6 +121,15 @@ async function exec(ctx, key, cmd, message) {
       st.optOut[from.id] = !st.optOut[from.id];
       save();
       await reply(st.optOut[from.id] ? 'Принято, тебя не трогаю. Повторная команда вернёт всё назад.' : 'Ну всё, ты в игре 😈');
+      break;
+    case 'catchup':
+      await runCatchup(chatId, st, {
+        uid: from.id,
+        name: from.first_name || from.username || 'друг',
+        username: from.username,
+        replyTo: message.message_id,
+        hours: hoursFromText(cmd.args),
+      });
       break;
     case 'stats':
       await reply(`Статистика чата:\n${statsText(st, now)}`);

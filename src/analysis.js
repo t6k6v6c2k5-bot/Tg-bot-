@@ -30,7 +30,7 @@ export function rosterLine(st) {
 
 // ---- поиск упомянутых людей в вопросе ----
 // Падежи: «про Ваню», «Маше», «у Димы» — сравниваем по основе имени
-const nameRe = (name) => {
+export const nameRe = (name) => {
   const n = name.trim();
   const stem = n.length >= 4 ? n.slice(0, -1) : n;
   return new RegExp(`(?<!\\p{L})${esc(stem)}${stem === n ? '' : '\\p{L}{0,3}'}(?!\\p{L})`, 'iu');

@@ -1,14 +1,10 @@
 import { Telegraf } from 'telegraf';
 import { config } from './config.js';
-import { chat, remember, save, touchUser } from './store.js';
-import { decide, isDirect, cheapReaction } from './filter.js';
-import { app, respond, react } from './respond.js';
+import { chat, remember } from './store.js';
+import { app } from './respond.js';
 import { parseCommand, handleCommand, BOT_COMMANDS } from './commands.js';
-import { watchQuestion } from './scheduler.js';
-import { learn } from './memory.js';
-import { onHumanMessage, noteHour } from './life.js';
-import { refreshRoster, ingestNonText, onChatMember } from './roster.js';
-import { hourOf } from './store.js';
+import { ingestNonText, onChatMember } from './roster.js';
+import { processMessage } from './pipeline.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -22,8 +18,7 @@ export async function createBot() {
   bot.on('text', async (ctx) => {
     const msg = ctx.message;
     if (msg.from.is_bot) return;
-    const chatId = ctx.chat.id;
-    const st = chat(chatId);
+    const st = chat(ctx.chat.id);
     const text = msg.text;
 
     // Команды (кириллические тоже: Telegram их не размечает, поэтому разбираем сами)
@@ -39,47 +34,7 @@ export async function createBot() {
       ts: Date.now(),
       replyTo: msg.reply_to_message?.from?.is_bot ? undefined : msg.reply_to_message?.from?.id,
     });
-    // упомянутые через text_mention известны, даже если ещё не писали
-    for (const e of msg.entities || []) if (e.type === 'text_mention') touchUser(st, e.user);
-    if (ctx.chat.type !== 'private' && !st.rosterAt) refreshRoster(chatId, st);
-
-    const now = Date.now();
-    const replyToBot = msg.reply_to_message?.from?.id === app.id;
-    onHumanMessage(st, now, replyToBot);
-    noteHour(st, hourOf(now));
-    const isPrivate = ctx.chat.type === 'private';
-    const direct =
-      isPrivate ||
-      isDirect({
-        text,
-        botUsername: app.username,
-        aliases: config.aliases,
-        replyToBot,
-      });
-
-    // Обучение «блокнота»: раз в ~25 сообщений, не чаще раза в 10 минут
-    if (!isPrivate && ++st.sinceLearn >= 25 && now - st.lastLearnAt > 10 * 60_000) {
-      st.sinceLearn = 0;
-      st.lastLearnAt = now;
-      learn(chatId, st).then(save);
-    }
-
-    const mode = decide({ direct, text, st, now });
-    console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);
-    if (mode) {
-      await respond(chatId, st, { mode, replyTo: isPrivate ? undefined : msg.message_id });
-      return;
-    }
-
-    // Дешёвая реакция без ИИ
-    const emoji = cheapReaction({ text, st, now });
-    if (emoji && (await react(chatId, msg.message_id, emoji))) {
-      st.lastReactAt = now;
-      save();
-      return;
-    }
-
-    if (!isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
+    await processMessage(ctx, st, msg, { text });
   });
 
   // всё, что не текст: стикеры, фото, голосовые, вход/выход людей (текст сюда не доходит)

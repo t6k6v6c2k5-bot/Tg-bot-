@@ -42,7 +42,8 @@ const providers = {
   gemini: {
     enabled: () => Boolean(config.geminiKey),
     models: (tier) => (tier === 'smart' ? [...config.geminiSmartModels, ...config.geminiModels] : config.geminiModels),
-    async call({ system, prompt, maxTokens, temperature, model, json }) {
+    supportsMedia: true,
+    async call({ system, prompt, maxTokens, temperature, model, json, media }) {
       const generationConfig = { maxOutputTokens: maxTokens, temperature };
       if (json) generationConfig.responseMimeType = 'application/json';
       const send = (gc) =>
@@ -51,7 +52,12 @@ const providers = {
           { 'x-goog-api-key': config.geminiKey },
           {
             systemInstruction: { parts: [{ text: system }] },
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            contents: [
+              {
+                role: 'user',
+                parts: [...(media ? [{ inlineData: { mimeType: media.mime, data: media.data } }] : []), { text: prompt }],
+              },
+            ],
             generationConfig: gc,
           },
         );
@@ -103,12 +109,12 @@ function rateOk(high) {
  *          prefer?:'main'|'edgy', high?:boolean}} o
  * @returns {Promise<{text:string, provider:string}|null>} null = никто не ответил, молчим
  */
-export async function generate({ system, prompt, maxTokens = 120, temperature = 0.9, prefer = 'main', high = false, json = false, tier = 'fast' }) {
+export async function generate({ system, prompt, maxTokens = 120, temperature = 0.9, prefer = 'main', high = false, json = false, tier = 'fast', media = null }) {
   if (!rateOk(high)) {
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
-  const names = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled());
+  const names = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
   const seen = new Set();
   const candidates = names
     .flatMap((name) => providers[name].models(tier).map((model) => ({ name, model })))
@@ -118,7 +124,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     if ((cooldown[key] || 0) > Date.now()) continue;
     calls.push(Date.now());
     try {
-      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json })).trim();
+      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model, json, media })).trim();
       if (text) return { text, provider: key };
       console.log(`[ai] ${key}: пустой ответ`);
     } catch (e) {

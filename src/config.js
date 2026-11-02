@@ -27,7 +27,9 @@ export const config = {
   digestHour: num('DIGEST_HOUR', 22),
   digestMinMessages: num('DIGEST_MIN_MESSAGES', 20),
   dataDir: env.DATA_DIR || './data',
-  aiRpm: num('AI_RPM', 8),
+  aiRpm: num('AI_RPM', 12),
+  mediaEnabled: env.MEDIA_ENABLED !== '0', // расшифровка голосовых и описание фото
+  mediaPerHour: num('MEDIA_PER_HOUR', 15), // не больше N разборов медиа в час на чат
   roastCooldownMs: num('ROAST_COOLDOWN_HOURS', 3) * 3600_000,
   historyInPrompt: 18,
   maxReplyChars: 280,

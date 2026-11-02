@@ -98,6 +98,7 @@ export function remember(st, entry) {
     u.left = false;
   }
   save();
+  return entry;
 }
 
 // ---- время в часовом поясе бота ----
