@@ -66,3 +66,7 @@ export function recordFeedback(st, msg, now = Date.now()) {
   }
   return null;
 }
+
+// Человек просит оставить его в покое: инициативные подколы к нему отключаем на неделю
+const LEAVE_ALONE = /(?<!\p{L})(?:отстань|отвали|отъ[её]б\p{L}*|хватит\s+(?:меня|ко\s+мне|докапываться|доставать)|не\s+трогай\s+меня|не\s+надо\s+меня|оставь\s+(?:меня|в\s+покое)|не\s+(?:тегай|тэгай|пингуй)\s+меня)/iu;
+export const isLeaveMeAlone = (text) => LEAVE_ALONE.test(text || '');

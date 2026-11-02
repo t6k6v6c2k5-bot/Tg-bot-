@@ -4,7 +4,7 @@ import { decide, isDirect, cheapReaction, closerKind } from './filter.js';
 import { app, respond, react } from './respond.js';
 import { watchQuestion } from './scheduler.js';
 import { learn, quickFacts } from './memory.js';
-import { recordFeedback, isCriticism } from './taste.js';
+import { recordFeedback, isCriticism, isLeaveMeAlone } from './taste.js';
 import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
@@ -31,6 +31,11 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   // Учёба без ИИ: реакция чата на реплики бота и факты по простым правилам — всегда, даже если модели недоступны
   if (!isPrivate) {
     recordFeedback(st, { text, reply_to_message: msg.reply_to_message }, now);
+    // просит отстать (ответом на реплику бота): неделю не докапываемся по своей инициативе
+    if (replyToBot && isLeaveMeAlone(text)) {
+      st.leaveAlone = { ...(st.leaveAlone || {}), [msg.from.id]: now };
+      console.log(`[leave-alone] ${msg.from.first_name || msg.from.id} просит отстать — инициативные подколы к нему на неделю отключены`);
+    }
     if (quickFacts(st, msg.from.id, text, now)) console.log('[memory] факт записан правилом');
   }
   if (record) return;

@@ -31,11 +31,19 @@ export function mentionedUsers(st, text) {
 }
 
 export async function say(chatId, st, text, replyTo, meta = {}) {
-  const sent = await app.telegram.sendMessage(chatId, text, {
-    reply_parameters: replyTo ? { message_id: replyTo, allow_sending_without_reply: true } : undefined,
-  });
-  remember(st, { id: sent.message_id, uid: app.id, name: app.name, text, ts: Date.now(), bot: true, ...meta });
-  if (meta.angle) st.lastAngle = meta.angle;
+  const { entities, ...rest } = meta;
+  const base = { reply_parameters: replyTo ? { message_id: replyTo, allow_sending_without_reply: true } : undefined };
+  let sent;
+  try {
+    // entities (text_mention) нужны, чтобы тегнуть человека без @ника: ему придёт уведомление
+    sent = await app.telegram.sendMessage(chatId, text, entities ? { ...base, entities } : base);
+  } catch (e) {
+    if (!entities) throw e;
+    console.warn('[say] не удалось с тегом, отправляю без него:', e.message);
+    sent = await app.telegram.sendMessage(chatId, text, base);
+  }
+  remember(st, { id: sent.message_id, uid: app.id, name: app.name, text, ts: Date.now(), bot: true, ...rest });
+  if (rest.angle) st.lastAngle = rest.angle;
   return sent;
 }
 

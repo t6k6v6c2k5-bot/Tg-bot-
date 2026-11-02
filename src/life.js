@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { generate } from './ai.js';
 import { parseReply } from './parse.js';
-import { system, pokePrompt, greetingPrompt, talePrompt, transcript } from './prompts.js';
+import { system, pokePrompt, needlePrompt, greetingPrompt, talePrompt, transcript } from './prompts.js';
 import { bestOf } from './wit.js';
 import { logSay } from './log.js';
 import { pickAngle, repetition } from './variety.js';
@@ -111,6 +111,47 @@ export function pickPokeTarget(st, now, rng = Math.random) {
   return { uid, quietHours: Math.round((now - ts) / H) };
 }
 
+const WEEK = 7 * 24 * H;
+
+// Кого можно «зацепить»: недавно писал (материал есть), не в списке «не подкалывать»,
+// не просил отстать, по своей инициативе не цеплялись за него сутки
+export function pickNeedleTarget(st, now, rng = Math.random) {
+  const seen = lastSeen(st);
+  const counts = {};
+  for (const m of st.history.slice(-600)) if (!m.bot && m.uid && now - m.ts < 3 * 24 * H) counts[m.uid] = (counts[m.uid] || 0) + 1;
+  const pool = Object.entries(seen).filter(
+    ([uid, ts]) =>
+      st.users[uid] &&
+      !st.optOut?.[uid] &&
+      !(st.leaveAlone?.[uid] > now - WEEK) &&
+      now - ts < 3 * 24 * H &&
+      (counts[uid] || 0) >= 3 &&
+      now - (st.needleLast?.[uid] || 0) >= 24 * H &&
+      now - (st.roastLast?.[uid] || 0) >= config.roastCooldownMs,
+  );
+  if (!pool.length) return null;
+  const [uid] = pool[Math.floor(rng() * pool.length)];
+  return { uid };
+}
+
+// После «@ник, » первая буква строчная («@vanya, в понедельник…»), кроме аббревиатур и имени самого адресата
+function lowerFirst(t, name = '') {
+  const w = t.match(/^[\p{L}\d]+/u)?.[0];
+  if (!w || (w.length > 1 && w === w.toUpperCase()) || /\d/.test(w) || (name && w.toLowerCase() === name.toLowerCase())) return t;
+  return t[0].toLowerCase() + t.slice(1);
+}
+
+// Тег человека: по @нику, а без ника — через text_mention (уведомление придёт всё равно)
+export function withMention(u, uid, text) {
+  if (u.username) {
+    const h = '@' + u.username;
+    return { text: text.toLowerCase().includes(h.toLowerCase()) ? text : `${h}, ${lowerFirst(text, u.name)}` };
+  }
+  const name = u.name;
+  const full = text.startsWith(name) ? text : `${name}, ${lowerFirst(text, name)}`;
+  return { text: full, entities: [{ type: 'text_mention', offset: 0, length: name.length, user: { id: Number(uid) } }] };
+}
+
 /**
  * Решает, пора ли Бате проявить инициативу. Чистая функция.
  * @returns {'greeting'|'revive'|'poke'|'tale'|null}
@@ -141,17 +182,19 @@ export function pickInitiative(st, now, { hour, today, rng = Math.random }) {
   if (now - (st.lastReviveAt || 0) > 5 * H) options.push('revive');
   if (pickPokeTarget(st, now, () => 0)) options.push('poke');
   if (now - (st.lastTaleAt || 0) > 20 * H) options.push('tale');
+  // дерзкий подкол с тегом: не на мягком тоне, не чаще раза в 4 часа
+  if (s.tone !== 'soft' && s.activity >= 3 && now - (st.lastNeedleAt || 0) > 4 * H && pickNeedleTarget(st, now, () => 0)) options.push('needle');
   if (!options.length) return null;
   // чаще то, на что в этом чате откликаются
-  const weight = (k) => (k === 'tale' ? 1 : 3) * (0.5 + (st.kindStats?.[k]?.ema ?? 0.5));
+  const weight = (k) => ({ tale: 1, needle: 2 }[k] ?? 3) * (0.5 + (st.kindStats?.[k]?.ema ?? 0.5));
   let r = rng() * options.reduce((a, k) => a + weight(k), 0);
   for (const k of options) if ((r -= weight(k)) < 0) return k;
   return options[0];
 }
 
-async function speak(chatId, st, text, kind, angle) {
+async function speak(chatId, st, text, kind, angle, entities) {
   logSay({ kind: `инициатива:${kind}`, angle: angle?.id, question: '', answer: text });
-  const sent = await say(chatId, st, text, undefined, { angle: angle?.id });
+  const sent = await say(chatId, st, text, undefined, { angle: angle?.id, entities });
   const now = Date.now();
   st.initLog = [...(st.initLog || []), now];
   st.lastInitAt = now;
@@ -220,9 +263,26 @@ export async function runInitiative(chatId, st, kind, today) {
       pokePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, quietHours: target.quietHours, history: st.history }),
     );
     if (r?.type !== 'text') return;
-    // чтобы человеку пришло уведомление, обращение по @нику должно быть в тексте
-    const text = handle && !r.text.toLowerCase().includes(handle.toLowerCase()) ? `${handle}, ${r.text}` : r.text;
-    await speak(chatId, st, text, 'poke', r.angle);
+    // чтобы человеку пришло уведомление, он должен быть тегнут
+    const m = withMention(u, target.uid, r.text);
+    await speak(chatId, st, m.text, 'poke', r.angle, m.entities);
+    return;
+  }
+
+  if (kind === 'needle') {
+    const target = pickNeedleTarget(st, now);
+    if (!target) return;
+    const u = st.users[target.uid];
+    // фиксируем попытку сразу: даже если ИИ промолчит, за этого человека не цепляемся сутки
+    st.needleLast = { ...(st.needleLast || {}), [target.uid]: now };
+    st.lastNeedleAt = now;
+    const lines = st.history.filter((m) => !m.bot && String(m.uid) === String(target.uid) && now - m.ts < 3 * 24 * H).slice(-6).map((m) => m.text);
+    const handle = u.username ? `@${u.username}` : '';
+    const r = await ask(st, needlePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, history: st.history }), 160);
+    if (r?.type !== 'text') return;
+    st.roastLast[target.uid] = now;
+    const m = withMention(u, target.uid, r.text);
+    await speak(chatId, st, m.text, 'needle', r.angle, m.entities);
   }
 }
 
