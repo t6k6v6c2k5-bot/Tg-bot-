@@ -4,7 +4,11 @@ const num = (k, d) => (env[k] !== undefined && env[k] !== '' ? Number(env[k]) : 
 export const config = {
   botToken: env.BOT_TOKEN,
   geminiKey: env.GEMINI_API_KEY,
-  geminiModel: env.GEMINI_MODEL || 'gemini-3.8-flash',
+  // можно списком через запятую: первая — основная, остальные — запасные
+  geminiModels: (env.GEMINI_MODEL || 'gemini-3.5-flash-lite,gemini-flash-lite-latest,gemini-3.8-flash')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   grokKey: env.GROK_API_KEY,
   grokModel: env.GROK_MODEL || 'grok-4-fast',
   aliases: (env.BOT_ALIASES || 'бот')

@@ -58,6 +58,11 @@ export async function respond(chatId, st, { mode, replyTo }) {
     });
     if (!res) {
       console.log(`[${mode}] ИИ не ответил`);
+      const now = Date.now();
+      if (direct && now - (st.lastErrAt || 0) > 2 * 60_000) {
+        st.lastErrAt = now;
+        await say(chatId, st, 'Что-то я приболел, мозги не включаются. Спроси чуть позже 🤒', replyTo);
+      }
       return false;
     }
     const r = parseReply(res.text);

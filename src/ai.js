@@ -3,7 +3,7 @@ import { config } from './config.js';
 // Gemini — основной мозг, Grok — подколы. Если один упёрся в лимит, берём другой; если оба — молчим.
 
 const TIMEOUT_MS = 15_000;
-const cooldown = { gemini: 0, grok: 0 }; // до какого времени провайдер «отдыхает»
+const cooldown = {}; // ключ «провайдер:модель» -> до какого времени она «отдыхает»
 const calls = []; // ts вызовов за последнюю минуту
 
 class ProviderError extends Error {
@@ -41,12 +41,13 @@ async function post(url, headers, body) {
 const providers = {
   gemini: {
     enabled: () => Boolean(config.geminiKey),
-    async call({ system, prompt, maxTokens, temperature }) {
+    models: () => config.geminiModels,
+    async call({ system, prompt, maxTokens, temperature, model }) {
       const generationConfig = { maxOutputTokens: maxTokens, temperature };
       // у 2.5 Flash «размышления» съедают лимит токенов — для коротких реплик не нужны
-      if (/2\.5-flash/.test(config.geminiModel)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      if (/2\.5-flash(?!-lite)/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       const data = await post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${config.geminiModel}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         { 'x-goog-api-key': config.geminiKey },
         {
           systemInstruction: { parts: [{ text: system }] },
@@ -59,12 +60,13 @@ const providers = {
   },
   grok: {
     enabled: () => Boolean(config.grokKey),
-    async call({ system, prompt, maxTokens, temperature }) {
+    models: () => [config.grokModel],
+    async call({ system, prompt, maxTokens, temperature, model }) {
       const data = await post(
         'https://api.x.ai/v1/chat/completions',
         { authorization: `Bearer ${config.grokKey}` },
         {
-          model: config.grokModel,
+          model,
           max_tokens: maxTokens,
           temperature,
           messages: [
@@ -96,18 +98,20 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
-  const order = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled());
-  for (const name of order) {
-    if (cooldown[name] > Date.now()) continue;
+  const names = (prefer === 'edgy' ? ['grok', 'gemini'] : ['gemini', 'grok']).filter((n) => providers[n].enabled());
+  const candidates = names.flatMap((name) => providers[name].models().map((model) => ({ name, model })));
+  for (const { name, model } of candidates) {
+    const key = `${name}:${model}`;
+    if ((cooldown[key] || 0) > Date.now()) continue;
     calls.push(Date.now());
     try {
-      const text = (await providers[name].call({ system, prompt, maxTokens, temperature })).trim();
-      if (text) return { text, provider: name };
-      console.log(`[ai] ${name}: пустой ответ`);
+      const text = (await providers[name].call({ system, prompt, maxTokens, temperature, model })).trim();
+      if (text) return { text, provider: key };
+      console.log(`[ai] ${key}: пустой ответ`);
     } catch (e) {
       const limited = e.status === 429 || e.status >= 500 || e.status === 0;
-      cooldown[name] = Date.now() + (limited ? e.retryAfterMs || 60_000 : 10 * 60_000);
-      console.warn(`[ai] ${name} упал (${e.message}); пауза до ${new Date(cooldown[name]).toISOString()}`);
+      cooldown[key] = Date.now() + (limited ? e.retryAfterMs || 60_000 : 10 * 60_000);
+      console.warn(`[ai] ${key} упал (${e.message.replace(/\s+/g, ' ').slice(0, 160)}); пауза до ${new Date(cooldown[key]).toISOString()}`);
     }
   }
   return null;
