@@ -61,8 +61,9 @@ test('запоминает очередь человека, утром пише�
   const base = { 'GPV3.1': { 5: 'no', 6: 'no' }, 'GPV4.2': { 1: 'yes' }, 'GPV5.2': { 1: 'yes' } };
   data = { fact: { update: 'x', data: { [Date.UTC(2026, 10, 9) / 1000]: base } } };
   await outageCommand(-555, st, '3.1', 1, vlad, fakeFetch);
-  assert.match(sent[0][2], /Черга 3\.1 \(Влад\)/);
-  assert.match(sent[0][2], /04:00–06:00/);
+  assert.match(sent[0][2], /Черга 3\.1/);
+  assert.match(sent[0][2], /3\.1 — Влад/);
+  assert.match(sent[0][2], /⛔ 04:00–06:00 {2}\(2 год\)/);
   setUserGroup(st, olya, 'GPV4.2', data);
   assert.equal(parseMyQueue('у меня очередь 4.2'), 'GPV4.2');
   assert.equal(parseMyQueue('просто текст'), null);
@@ -71,9 +72,9 @@ test('запоминает очередь человека, утром пише�
   await outageTick(t0, fakeFetch);
   assert.equal(sent.length, 1);
   assert.match(sent[0][2], /Доброго ранку/);
-  assert.match(sent[0][2], /• 3\.1 \(Влад\): 04:00–06:00/);
-  assert.match(sent[0][2], /• 4\.2 \(Оля\): без відключень/);
-  assert.match(sent[0][2], /• 5\.2: без відключень/); // очереди без людей тоже в общей сводке
+  assert.match(sent[0][2], /🔴 3\.1 — Влад\n⛔ 04:00–06:00/);
+  assert.match(sent[0][2], /🟢 4\.2 · 5\.2 — Оля\n✅ без відключень/); // одинаковые очереди склеены, очереди без людей тоже в сводке
+  assert.ok(sent[0][3].some((e) => e.type === 'bold') && sent[0][3].some((e) => e.type === 'blockquote'));
 
   data = { fact: { update: 'y', data: { [Date.UTC(2026, 10, 9) / 1000]: { ...base, 'GPV3.1': { 5: 'no' } } } } };
   _resetOutageCache();
@@ -81,9 +82,9 @@ test('запоминает очередь человека, утром пише�
   await outageTick(t0 + 11 * 60_000, fakeFetch);
   assert.equal(sent.length, 1);
   assert.match(sent[0][2], /змінився \(черги: 3\.1\)/);
-  assert.match(sent[0][2], /🔄 3\.1 \(Влад\): 04:00–05:00/);
-  assert.match(sent[0][2], /• 4\.2 \(Оля\)/); // остальные очереди тоже в сводке, но без пометки
-  assert.equal(sent[0][3]?.[0]?.type, 'text_mention'); // у Влада нет ника — тег через text_mention
+  assert.match(sent[0][2], /🔄 3\.1 — Влад\n⛔ 04:00–05:00/);
+  assert.match(sent[0][2], /4\.2 · 5\.2 — Оля/); // остальные очереди тоже в сводке, но без пометки
+  assert.ok(sent[0][3].some((e) => e.type === 'text_mention')); // у Влада нет ника — тег через text_mention
 
   // вечером — сводка на завтра, как только завтрашний график вышел
   const tomorrow = { [Date.UTC(2026, 10, 9) / 1000]: base, [Date.UTC(2026, 10, 10) / 1000]: { 'GPV3.1': { 20: 'no' }, 'GPV4.2': { 1: 'yes' } } };
@@ -93,7 +94,7 @@ test('запоминает очередь человека, утром пише�
   await outageTick(Date.UTC(2026, 10, 9, 20, 30), fakeFetch);
   assert.equal(sent.length, 1);
   assert.match(sent[0][2], /Добрий вечір/);
-  assert.match(sent[0][2], /Завтра \(10\.11\)/);
+  assert.match(sent[0][2], /Завтра · 10\.11/);
   assert.doesNotMatch(sent[0][2], /Сьогодні/);
 
   // ночью не будим
@@ -124,6 +125,6 @@ test('/графики — сводка по всем очередям, реги�
   app.telegram = { sendMessage: async (id, t) => (sent.push(t), { message_id: 1 }) };
   await outageAll(-777, chat(-777), 5, fakeFetch);
   assert.match(sent[0], /Світло по всіх чергах/);
-  assert.match(sent[0], /• 1\.1: 00:00–01:00/);
-  assert.match(sent[0], /• 2\.1: без відключень/);
+  assert.match(sent[0], /🔴 1\.1\n⛔ 00:00–01:00/);
+  assert.match(sent[0], /🟢 2\.1\n✅ без відключень/);
 });
