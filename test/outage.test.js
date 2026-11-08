@@ -10,7 +10,7 @@ process.env.QUIET_FROM = '0';
 process.env.QUIET_TO = '6';
 process.env.BOT_TZ = 'UTC';
 
-const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, _resetOutageCache } = await import('../src/outage.js');
+const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, offIntervals, setUserGroup, parseMyQueue, _resetOutageCache } = await import('../src/outage.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 const { selfTalk, setSelfTalk } = await import('../src/owner.js');
@@ -39,42 +39,59 @@ test('отпечаток меняется только при изменении
   assert.notEqual(groupHash({ fact: { data: { 1000: day('no', 'no') } } }, 'GPV3.1'), h);
 });
 
-test('подписка, утренний график и сообщение при изменении', async () => {
+test('интервалы без света склеиваются, половины часа считаются', () => {
+  const sched = { 1: 'no', 2: 'no', 3: 'first', 12: 'second', 13: 'no', 20: 'maybe' };
+  const r = offIntervals(sched);
+  assert.deepEqual(r.off, [[0, 150], [690, 780]]);
+  assert.deepEqual(r.maybe, [[1140, 1200]]);
+});
+
+test('запоминает очередь человека, утром пишет по очередям, при изменении тегает', async () => {
   _resetOutageCache();
   const sent = [];
   app.telegram = {
     sendPhoto: async (id, f, o) => sent.push(['photo', id, o.caption]),
-    sendMediaGroup: async (id, arr) => sent.push(['album', id, arr.length]),
-    sendMessage: async (id, t) => (sent.push(['msg', id, t]), { message_id: sent.length }),
+    sendMessage: async (id, t, o) => (sent.push(['msg', id, t, o?.entities]), { message_id: sent.length }),
   };
   app.id = 1;
   const st = chat(-555);
-  await outageCommand(-555, st, '3.1', 1, fakeFetch);
-  assert.equal(sent[0][0], 'photo');
-  assert.match(sent[0][2], /Черга 3\.1/);
+  const vlad = { id: 10, first_name: 'Влад' };
+  const olya = { id: 11, first_name: 'Оля', username: 'olya' };
+  const t0 = Date.UTC(2026, 10, 9, 8, 0); // 08:00 UTC
+  data = { fact: { update: 'x', data: { [Date.UTC(2026, 10, 9) / 1000]: { 'GPV3.1': { 5: 'no', 6: 'no' }, 'GPV4.2': { 1: 'yes' } } } } };
+  await outageCommand(-555, st, '3.1', 1, vlad, fakeFetch);
+  assert.match(sent[0][2], /Черга 3\.1 \(Влад\)/);
+  assert.match(sent[0][2], /04:00–06:00/);
+  setUserGroup(st, olya, 'GPV4.2', data);
+  assert.equal(parseMyQueue('у меня очередь 4.2'), 'GPV4.2');
+  assert.equal(parseMyQueue('просто текст'), null);
 
   sent.length = 0;
-  const morning = Date.UTC(2026, 10, 9, 8, 0); // 08:00 UTC
-  await outageTick(morning, fakeFetch);
-  assert.equal(sent.length, 1); // утренний
-  assert.match(sent[0][2], /ранку/);
+  await outageTick(t0, fakeFetch);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0][2], /Доброго ранку/);
+  assert.match(sent[0][2], /Черга 3\.1 \(Влад\)/);
+  assert.match(sent[0][2], /Черга 4\.2 \(Оля\)/);
 
-  data = { fact: { update: '09.11.2026 10:00', data: { 1000: day('no', 'no') } } };
+  data = { fact: { update: 'y', data: { [Date.UTC(2026, 10, 9) / 1000]: { 'GPV3.1': { 5: 'no' }, 'GPV4.2': { 1: 'yes' } } } } };
   _resetOutageCache();
   sent.length = 0;
-  await outageTick(morning + 11 * 60_000, fakeFetch);
+  await outageTick(t0 + 11 * 60_000, fakeFetch);
   assert.equal(sent.length, 1);
   assert.match(sent[0][2], /змінився/);
+  assert.match(sent[0][2], /Черга 3\.1/);
+  assert.doesNotMatch(sent[0][2], /4\.2/);
+  assert.equal(sent[0][3]?.[0]?.type, 'text_mention'); // у Влада нет ника — тег через text_mention
 
   // ночью не будим
-  data = { fact: { data: { 1000: day('yes', 'yes') } } };
+  data = { fact: { data: { [Date.UTC(2026, 10, 10) / 1000]: { 'GPV3.1': { 1: 'no' } } } } };
   _resetOutageCache();
   sent.length = 0;
   await outageTick(Date.UTC(2026, 10, 10, 3, 0), fakeFetch);
   assert.equal(sent.length, 0);
 
-  await outageCommand(-555, st, 'стоп 3.1', 1, fakeFetch);
-  assert.deepEqual(Object.keys(st.outage.groups), []);
+  await outageCommand(-555, st, 'стоп', 1, vlad, fakeFetch);
+  assert.equal(st.outage.users[10], undefined);
 });
 
 test('сам в чат не пишет по умолчанию', () => {

@@ -9,6 +9,7 @@ import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
+import { parseMyQueue, setUserGroup, loadData } from './outage.js';
 
 /**
  * Общий путь для любого сообщения человека — текст, расшифрованное голосовое, описанное фото.
@@ -39,6 +40,15 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
       console.log(`[leave-alone] ${msg.from.first_name || msg.from.id} просит отстать — инициативные подколы к нему на неделю отключены`);
     }
     if (quickFacts(st, msg.from.id, text, now)) console.log('[memory] факт записан правилом');
+  }
+  // «моя очередь 3.1»: запоминаем очередь света человека, дальше кидаем ему график
+  const myQueue = parseMyQueue(detect);
+  if (myQueue) {
+    const d = await loadData().catch(() => null);
+    setUserGroup(st, msg.from, myQueue, d);
+    save();
+    console.log(`[outage] ${msg.from.first_name || msg.from.id}: очередь ${myQueue}`);
+    if (await react(chatId, msg.message_id, '👌')) return;
   }
   if (record) return;
 

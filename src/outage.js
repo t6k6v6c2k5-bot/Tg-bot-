@@ -10,7 +10,6 @@ import { botOff } from './owner.js';
 const RAW = () => `https://raw.githubusercontent.com/${config.outageRepo}/${config.outageBranch}`;
 const POLL_MS = 10 * 60_000;
 const CACHE_MS = 5 * 60_000;
-const MAX_ALBUM = 10;
 
 let cache = { at: 0, data: null };
 let lastPoll = 0;
@@ -60,65 +59,147 @@ export function groupHash(data, g) {
 }
 
 const updated = (data) => data?.fact?.update || data?.fact?.updateFact || '';
-const caption = (g, data, note = '') => `💡 Черга ${shortName(g)}${updated(data) ? ` · оновлено ${updated(data)}` : ''}${note ? `\n${note}` : ''}`;
 
-async function sendGraphs(chatId, groups, data, note, fetchFn = fetch) {
-  const shots = [];
-  for (const g of groups) {
-    try {
-      shots.push({ g, buf: await getBuffer(imageUrl(g), fetchFn) });
-    } catch (e) {
-      console.warn('[outage] нет картинки', g, e.message);
-    }
+// ---------- расписание в человеческом виде ----------
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Интервалы без света за день: {off:[[с,по]…], maybe:[[с,по]…]} в минутах. Час i (1..24) = (i-1):00–i:00; first/second — первая/вторая половина часа. */
+export function offIntervals(sched) {
+  const off = [];
+  const maybe = [];
+  for (let h = 1; h <= 24; h++) {
+    const s = (h - 1) * 60;
+    const st = sched?.[String(h)];
+    if (st === 'no') off.push([s, s + 60]);
+    else if (st === 'first' || st === 'mfirst') off.push([s, s + 30]);
+    else if (st === 'second' || st === 'msecond') off.push([s + 30, s + 60]);
+    else if (st === 'maybe') maybe.push([s, s + 60]);
   }
-  if (!shots.length) return 0;
-  for (let i = 0; i < shots.length; i += MAX_ALBUM) {
-    const part = shots.slice(i, i + MAX_ALBUM);
-    if (part.length === 1) {
-      await app.telegram.sendPhoto(chatId, { source: part[0].buf }, { caption: caption(part[0].g, data, note) });
-    } else {
-      await app.telegram.sendMediaGroup(
-        chatId,
-        part.map(({ g, buf }) => ({ type: 'photo', media: { source: buf }, caption: caption(g, data, note) })),
-      );
+  const merge = (arr) => {
+    const out = [];
+    for (const [a, b] of arr) {
+      if (out.length && a <= out.at(-1)[1]) out.at(-1)[1] = Math.max(out.at(-1)[1], b);
+      else out.push([a, b]);
     }
-  }
-  return shots.length;
+    return out;
+  };
+  return { off: merge(off), maybe: merge(maybe) };
 }
 
-const sub = (st) => (st.outage ||= { groups: {}, morningDay: '' });
+const fmt = (iv) => iv.map(([a, b]) => `${hhmm(a)}–${hhmm(b)}`).join(', ');
 
-/** /свет 3.1 — подключить очередь и сразу прислать график; /свет стоп 3.1 — отключить; /свет — список */
-export async function outageCommand(chatId, st, args, replyTo, fetchFn = fetch) {
+/** Строки по очереди: сегодня и завтра (если уже есть в данных) */
+export function dayLines(data, g, now = Date.now()) {
+  const todayKey = dayKey(now);
+  const tomorrowKey = dayKey(now + 24 * 3600_000);
+  const out = [];
+  for (const [ts, groups] of Object.entries(data?.fact?.data || {}).sort(([a], [b]) => a - b)) {
+    const k = dayKey(Number(ts) * 1000);
+    const label = k === todayKey ? 'сьогодні' : k === tomorrowKey ? 'завтра' : null;
+    if (!label || !groups?.[g]) continue;
+    const { off, maybe } = offIntervals(groups[g]);
+    const parts = [];
+    parts.push(off.length ? `світла не буде ${fmt(off)}` : 'відключень немає');
+    if (maybe.length) parts.push(`можливо ${fmt(maybe)}`);
+    out.push(`${label}: ${parts.join('; ')}`);
+  }
+  return out;
+}
+
+/**
+ * Сообщение по очередям: «Черга 3.1 (Влад, Саша)» и строки по дням. tag=true — люди тегаются (придёт уведомление).
+ * @returns {{text:string, entities:object[]}}
+ */
+export function buildMessage(data, byGroup, { title, tag = false, now = Date.now() } = {}) {
+  let text = title ? `${title}\n` : '';
+  const entities = [];
+  for (const [g, people] of Object.entries(byGroup)) {
+    text += `\n💡 Черга ${shortName(g)} (`;
+    people.forEach((p, i) => {
+      if (i) text += ', ';
+      if (tag && !p.username) entities.push({ type: 'text_mention', offset: text.length, length: p.name.length, user: { id: Number(p.uid) } });
+      text += tag && p.username ? `@${p.username}` : p.name;
+    });
+    text += ')\n';
+    const lines = dayLines(data, g, now);
+    text += lines.length ? lines.map((l) => `• ${l}`).join('\n') : '• даних поки немає';
+    text += '\n';
+  }
+  return { text: text.trimEnd(), entities };
+}
+
+async function sendImage(chatId, g, data, fetchFn = fetch) {
+  const buf = await getBuffer(imageUrl(g), fetchFn);
+  await app.telegram.sendPhoto(chatId, { source: buf }, { caption: `💡 Черга ${shortName(g)}${updated(data) ? ` · оновлено ${updated(data)}` : ''}` });
+}
+
+const sub = (st) => {
+  const o = (st.outage ||= {});
+  o.users ||= {}; // uid -> { group, name, username }
+  o.hashes ||= {}; // группа -> отпечаток последнего отправленного графика
+  o.morningDay ||= '';
+  return o;
+};
+
+/** Люди чата по очередям: { 'GPV3.1': [{uid, name, username}] } */
+export function peopleByGroup(o) {
+  const by = {};
+  for (const [uid, u] of Object.entries(o.users)) (by[u.group] ||= []).push({ uid, name: u.name, username: u.username });
+  return by;
+}
+
+/** Запомнить очередь человека (вызывается и из фразы «моя очередь 3.1») */
+export function setUserGroup(st, from, g, data = null) {
   const o = sub(st);
-  const reply = (t) => say(chatId, st, t, replyTo);
+  o.users[from.id] = { group: g, name: from.first_name || from.username || 'друг', username: from.username };
+  if (data) o.hashes[g] = groupHash(data, g);
+}
+
+/** «моя черга 3.1», «у меня очередь 4.2» → 'GPV3.1' (или null) */
+export const parseMyQueue = (text) => {
+  const m = String(text || '').match(/(?:мо[яеёй]\w*|у\s+мен[яе]|моя)\s+(?:черга|очередь|групп\p{L}*)\s*(?:№|номер|це)?\s*(\d{1,2}\s*[.,\-]\s*\d)(?!\d)/iu) || String(text || '').match(/(?:черга|очередь)\s+(?:у\s+мен[яе]|мо[яеёй]\w*)\s*(\d{1,2}\s*[.,\-]\s*\d)(?!\d)/iu);
+  return m ? parseGroup(m[1]) : null;
+};
+
+/** /свет 3.1 — запомнить мою очередь и показать график; /свет — мой график; /свет стоп — забыть; /свет картинка — картинкой */
+export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = fetch) {
+  const o = sub(st);
+  const reply = (t, meta) => say(chatId, st, t, replyTo, meta);
   let data;
   try {
     data = await loadData(fetchFn);
   } catch (e) {
     console.warn('[outage]', e.message);
-    return void (await reply('Не дотягуюсь до графиков, спробуй трохи пізніше.'));
+    return void (await reply('Не дотягуюсь до графіків, спробуй трохи пізніше.'));
   }
   const known = listGroups(data);
-  const connected = Object.keys(o.groups);
+  const mine = o.users[from.id]?.group;
   const text = (args || '').trim();
-  if (/^(?:стоп|stop|off|выкл|вимкн|отпис|видал)/iu.test(text)) {
-    const g = parseGroup(text);
-    if (g) delete o.groups[g];
-    else o.groups = {};
+  if (/^(?:стоп|stop|off|выкл|вимкн|отпис|забудь|видал)/iu.test(text)) {
+    delete o.users[from.id];
     save();
-    return void (await reply(g ? `Черга ${shortName(g)} відключена.` : 'Усі черги відключені, графіки сам не кидаю.'));
+    return void (await reply('Забув твою чергу, графіки для тебе більше не кидаю.'));
   }
-  if (!text) {
-    const list = connected.length ? `Підключені черги: ${connected.map(shortName).join(', ')}.` : 'Жодна черга не підключена.';
-    return void (await reply(`${list}\nПодключити: /свет 3.1 (прийде графік зараз, далі вранці і коли він зміниться). Є черги: ${known.map(shortName).join(', ')}.`));
+  const wantImage = /(?:картин|графік|график|png|фото)/iu.test(text);
+  const g = parseGroup(text, known) || (!parseGroup(text) && (!text || wantImage) ? mine : null);
+  if (!g) {
+    if (text && !parseGroup(text)) return void (await reply(`Не розумію чергу. Пиши так: /свет 3.1. Є черги: ${known.map(shortName).join(', ')}.`));
+    if (!text) return void (await reply(`Я не знаю твою чергу. Напиши /свет 3.1 (або "моя черга 3.1"), запам'ятаю, і сам кидатиму тобі графік вранці та коли він зміниться. Є черги: ${known.map(shortName).join(', ')}.`));
+    return void (await reply(`Такої черги нема. Є: ${known.map(shortName).join(', ')}.`));
   }
-  const g = parseGroup(text, known);
-  if (!g) return void (await reply(`Не розумію чергу. Пиши так: /свет 3.1. Є черги: ${known.map(shortName).join(', ')}.`));
-  o.groups[g] = { hash: groupHash(data, g) };
+  if (!wantImage || parseGroup(text)) setUserGroup(st, from, g, data);
   save();
-  const n = await sendGraphs(chatId, [g], data, connected.includes(g) ? '' : 'Підключено: кидатиму вранці і коли графік зміниться.', fetchFn);
-  if (!n) await reply('Графік для цієї черги зараз недоступний, спробуй пізніше.');
+  if (wantImage) {
+    try {
+      return void (await sendImage(chatId, g, data, fetchFn));
+    } catch (e) {
+      console.warn('[outage] картинка', e.message);
+    }
+  }
+  const msg = buildMessage(data, { [g]: [{ uid: from.id, name: from.first_name || from.username || 'друг', username: from.username }] }, {
+    title: mine === g || !parseGroup(text) ? '' : "Запам'ятав твою чергу, далі кидатиму вранці і коли графік зміниться.",
+  });
+  await reply(msg.text);
 }
 
 const isQuiet = (hour) => (config.quietFrom <= config.quietTo ? hour >= config.quietFrom && hour < config.quietTo : hour >= config.quietFrom || hour < config.quietTo);
@@ -126,27 +207,30 @@ const isQuiet = (hour) => (config.quietFrom <= config.quietTo ? hour >= config.q
 /** Раз в минуту из планировщика: утренний график и сообщение при изменении (ночью не будим — всё придёт утром). */
 export async function outageTick(now = Date.now(), fetchFn = fetch) {
   if (botOff() || !app.telegram) return;
-  const chats = allChats().filter(([id, st]) => id < 0 && st.outage && Object.keys(st.outage.groups).length && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
+  const chats = allChats().filter(([id, st]) => id < 0 && st.outage?.users && Object.keys(st.outage.users).length && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
   if (!chats.length || now - lastPoll < POLL_MS) return;
   lastPoll = now;
   const data = await loadData(fetchFn, now);
   const hour = hourOf(now);
   const today = dayKey(now);
   for (const [chatId, st] of chats) {
-    const o = st.outage;
-    const hashes = Object.fromEntries(Object.keys(o.groups).map((g) => [g, groupHash(data, g)]));
+    const o = sub(st);
+    const by = peopleByGroup(o);
     try {
       if (hour >= config.outageHour && o.morningDay !== today && !isQuiet(hour)) {
         o.morningDay = today;
-        for (const g of Object.keys(o.groups)) o.groups[g].hash = hashes[g];
+        for (const g of Object.keys(by)) o.hashes[g] = groupHash(data, g);
         save();
-        await sendGraphs(chatId, Object.keys(o.groups), data, 'Доброго ранку, ось графік.', fetchFn);
+        const m = buildMessage(data, by, { title: 'Доброго ранку! Світло на сьогодні:', now });
+        await say(chatId, st, m.text);
       } else if (!isQuiet(hour)) {
-        const changed = Object.keys(o.groups).filter((g) => o.groups[g].hash !== hashes[g]);
+        const changed = Object.keys(by).filter((g) => o.hashes[g] !== groupHash(data, g));
         if (changed.length) {
-          for (const g of changed) o.groups[g].hash = hashes[g];
+          const sel = Object.fromEntries(changed.map((g) => [g, by[g]]));
+          for (const g of changed) o.hashes[g] = groupHash(data, g);
           save();
-          await sendGraphs(chatId, changed, data, 'Графік змінився.', fetchFn);
+          const m = buildMessage(data, sel, { title: 'Графік змінився:', tag: true, now });
+          await say(chatId, st, m.text, undefined, m.entities.length ? { entities: m.entities } : {});
         }
       }
     } catch (e) {

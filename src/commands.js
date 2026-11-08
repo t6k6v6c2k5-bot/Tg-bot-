@@ -54,7 +54,7 @@ export const BOT_COMMANDS = [
   { command: 'crude', description: 'Пошлость и мат в шутках 0-3' },
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
-  { command: 'light', description: 'График света: /свет 3.1 (стоп 3.1 — отписаться)' },
+  { command: 'light', description: 'Свет: /свет 3.1 запомнит твою очередь' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
 
@@ -76,7 +76,7 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата
-/свет 3.1 — график отключений света для очереди 3.1 (дальше сам кидаю утром и когда график меняется); /свет стоп 3.1 — отписаться; /свет — какие очереди подключены`;
+/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь`;
 
 // true — сообщение было командой (нашей или чужой), дальше его разбирать не нужно
 export async function handleCommand(ctx, cmd, message) {
@@ -96,7 +96,7 @@ async function exec(ctx, key, cmd, message) {
 
   switch (key) {
     case 'outage':
-      await outageCommand(chatId, st, cmd.args, message.message_id);
+      await outageCommand(chatId, st, cmd.args, message.message_id, from);
       break;
     case 'help':
       await reply(HELP);
