@@ -11,6 +11,7 @@ import { lifeStatus } from './life.js';
 import { CRUDE_LEVELS, crudeLevel } from './prompts.js';
 import { dossier, statsText, detectTargets } from './analysis.js';
 import { runCatchup, hoursFromText } from './catchup.js';
+import { outageCommand } from './outage.js';
 
 export const parseCommand = (text) => {
   const m = text.match(/^\/([\p{L}0-9_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/u);
@@ -33,6 +34,7 @@ const ALIAS = {
   разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
+  свет: 'outage', світло: 'outage', график: 'outage', графік: 'outage', light: 'outage', outage: 'outage',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
 };
 
@@ -52,6 +54,7 @@ export const BOT_COMMANDS = [
   { command: 'crude', description: 'Пошлость и мат в шутках 0-3' },
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
+  { command: 'light', description: 'График света: /свет 3.1 (стоп 3.1 — отписаться)' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
 
@@ -72,7 +75,8 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /разбор @ник — что я знаю о человеке и как он ведёт себя в чате
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
-/оживи — вопрос или опрос для тихого чата`;
+/оживи — вопрос или опрос для тихого чата
+/свет 3.1 — график отключений света для очереди 3.1 (дальше сам кидаю утром и когда график меняется); /свет стоп 3.1 — отписаться; /свет — какие очереди подключены`;
 
 // true — сообщение было командой (нашей или чужой), дальше его разбирать не нужно
 export async function handleCommand(ctx, cmd, message) {
@@ -91,6 +95,9 @@ async function exec(ctx, key, cmd, message) {
   const now = Date.now();
 
   switch (key) {
+    case 'outage':
+      await outageCommand(chatId, st, cmd.args, message.message_id);
+      break;
     case 'help':
       await reply(HELP);
       break;

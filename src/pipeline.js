@@ -8,7 +8,7 @@ import { recordFeedback, isCriticism, isLeaveMeAlone } from './taste.js';
 import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
-import { botOff } from './owner.js';
+import { botOff, selfTalk } from './owner.js';
 
 /**
  * Общий путь для любого сообщения человека — текст, расшифрованное голосовое, описанное фото.
@@ -54,6 +54,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   let mode = decide({ direct, text, st, now });
+  if (!selfTalk() && !direct) mode = null; // сам не пишет: только когда позвали
   // Человек поставил точку («понял», «ок», «збс», «спасибо», «ахах», 👍) — разговор окончен: не отвечаем,
   // модель не дёргаем; иногда ставим реакцию, чтобы не выглядело, будто бот проигнорировал
   // «да» в ответ на вопрос самого бота — не точка, а ответ: на него отвечаем
@@ -90,12 +91,12 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   // Дешёвая реакция без ИИ
-  const emoji = cheapReaction({ text, st, now });
+  const emoji = selfTalk() ? cheapReaction({ text, st, now }) : null;
   if (emoji && (await react(chatId, msg.message_id, emoji))) {
     st.lastReactAt = now;
     save();
     return;
   }
 
-  if (!isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
+  if (selfTalk() && !isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
 }

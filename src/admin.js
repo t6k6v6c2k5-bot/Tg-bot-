@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, botOff, setBotOff, _resetOwner } from './owner.js';
+import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, botOff, setBotOff, selfTalk, setSelfTalk, _resetOwner } from './owner.js';
 import { allChats, chat, save, dayKey } from './store.js';
 import { app, say } from './respond.js';
 import { runInitiative, pickNeedleTarget, pickPokeTarget, dailyCap, engagement } from './life.js';
@@ -108,7 +108,7 @@ export function mainMenu(now = Date.now()) {
   const dms = allChats().filter(([id]) => id > 0).length;
   return {
     text: `🛠 Админка Бати${botOff() ? ' (БОТ ВЫКЛЮЧЕН: молчит везде)' : ''}\nГрупповых чатов: ${g.length} (активных за сутки: ${active}). Личных диалогов: ${dms}.`,
-    kb: { inline_keyboard: [[btn('📋 Чаты', 'a:l')], [btn('🤖 ИИ и ключи', 'a:ai')], [btn(botOff() ? '🔴 Бот выключен — включить' : '🟢 Бот включён — выключить', 'a:off')], [btn(ownerSerious() ? '🎩 Со мной: серьёзно' : '🎭 Со мной: как обычно', 'a:os')], [btn('🔄 Обновить', 'a:m')]] },
+    kb: { inline_keyboard: [[btn('📋 Чаты', 'a:l')], [btn('🤖 ИИ и ключи', 'a:ai')], [btn(selfTalk() ? '🗣 Сам пишет: да' : '🤐 Сам пишет: нет (только графики света)', 'a:stk')], [btn(botOff() ? '🔴 Бот выключен — включить' : '🟢 Бот включён — выключить', 'a:off')], [btn(ownerSerious() ? '🎩 Со мной: серьёзно' : '🎭 Со мной: как обычно', 'a:os')], [btn('🔄 Обновить', 'a:m')]] },
   };
 }
 
@@ -191,6 +191,12 @@ export async function onAction(ctx) {
   try {
     if (cmd === 'm') { await ack(); const m = mainMenu(); return await bypass(ctx, m.text, m.kb); }
     if (cmd === 'l') { await ack(); await fillTitles(); const m = listMenu(); return await bypass(ctx, m.text, m.kb); }
+    if (cmd === 'stk') {
+      setSelfTalk(!selfTalk());
+      await ack(selfTalk() ? 'Бот снова заговаривает сам' : 'Сам не пишет, только отвечает и кидает графики');
+      const m = mainMenu();
+      return await bypass(ctx, m.text, m.kb);
+    }
     if (cmd === 'off') {
       setBotOff(!botOff());
       await ack(botOff() ? 'Бот выключен: молчит везде' : 'Бот включён');

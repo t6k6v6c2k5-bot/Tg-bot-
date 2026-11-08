@@ -10,9 +10,9 @@ function load() {
   if (state) return state;
   try {
     const j = JSON.parse(fs.readFileSync(file(), 'utf8'));
-    state = { ids: new Set(j.ids || []), serious: j.serious !== false, off: j.off === true };
+    state = { ids: new Set(j.ids || []), serious: j.serious !== false, off: j.off === true, selfTalk: typeof j.selfTalk === 'boolean' ? j.selfTalk : undefined };
   } catch {
-    state = { ids: new Set(), serious: true, off: false };
+    state = { ids: new Set(), serious: true, off: false, selfTalk: undefined };
   }
   return state;
 }
@@ -20,7 +20,7 @@ function load() {
 function persist() {
   try {
     fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify({ ids: [...state.ids], serious: state.serious, off: state.off }));
+    fs.writeFileSync(file(), JSON.stringify({ ids: [...state.ids], serious: state.serious, off: state.off, selfTalk: state.selfTalk }));
   } catch (e) {
     console.error('[admin] не удалось сохранить:', e.message);
   }
@@ -46,6 +46,13 @@ export function setOwnerSerious(v) {
 export const botOff = () => load().off === true;
 export function setBotOff(v) {
   load().off = Boolean(v);
+  persist();
+}
+
+/** Может ли бот сам писать в чат. По умолчанию нет (SELF_TALK=1 включает); переключается в админке. */
+export const selfTalk = () => load().selfTalk ?? config.selfTalk;
+export function setSelfTalk(v) {
+  load().selfTalk = Boolean(v);
   persist();
 }
 

@@ -1,5 +1,6 @@
 import { config } from './config.js';
-import { botOff } from './owner.js';
+import { botOff, selfTalk } from './owner.js';
+import { outageTick } from './outage.js';
 import { allChats, dayKey, hourOf, save } from './store.js';
 import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
@@ -10,6 +11,7 @@ import { refreshRoster, rosterDue } from './roster.js';
 
 async function tick() {
   if (botOff()) return;
+  await outageTick().catch((e) => console.error('[outage]', e.message));
   const now = Date.now();
   const hour = hourOf(now);
   const today = dayKey(now);
@@ -28,6 +30,7 @@ async function tick() {
         await learn(chatId, st);
         save();
       }
+      if (!selfTalk()) continue; // сам не пишет: ни итогов, ни оживлений
       if (st.settings.mutedUntil > now) continue;
 
       // Итоги дня — раз в сутки

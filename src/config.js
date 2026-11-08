@@ -75,6 +75,13 @@ export const config = {
   mediaEnabled: env.MEDIA_ENABLED !== '0', // расшифровка голосовых и описание фото
   mediaPerHour: num('MEDIA_PER_HOUR', 15), // не больше N разборов медиа в час на чат
   roastCooldownMs: num('ROAST_COOLDOWN_HOURS', 3) * 3600_000,
+  // Сам в чат не пишет (ни шуток, ни оживлений, ни итогов); отвечает, когда позвали, и кидает графики света
+  selfTalk: env.SELF_TALK === '1',
+  // Графики отключений света: https://github.com/Baskerville42/outage-data-ua
+  outageRepo: env.OUTAGE_REPO || 'Baskerville42/outage-data-ua',
+  outageBranch: env.OUTAGE_BRANCH || 'main',
+  outageRegion: env.OUTAGE_REGION || 'dnipro', // dnipro | kyiv | kyiv-region | odesa
+  outageHour: num('OUTAGE_HOUR', 7), // утренний график (по BOT_TZ)
   historyInPrompt: 18,
   maxReplyChars: 500,
 };
