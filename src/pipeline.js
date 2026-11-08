@@ -13,6 +13,7 @@ import { renameNote } from './rename.js';
 import { botMode, hardcore } from './botmode.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
 import { isTimeQuestion, timeAnswer } from './clock.js';
+import { isAlertQuestion, alertStatusText } from './alerts.js';
 import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-ask.js';
 
 /**
@@ -98,6 +99,11 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   if (mode === 'direct' && replyToBot && isCriticism(detect)) mode = 'critic';
   console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);
   if (mode) {
+    // «есть тревога?», «где летит» — сводка из открытых источников, а не шутка
+    if (mode === 'direct' && isAlertQuestion(detect)) {
+      await say(chatId, st, await alertStatusText(), isPrivate ? undefined : msg.message_id);
+      return;
+    }
     // «который час»: отвечаем кодом по времени бота (Киев), а не угадываем моделью
     if (mode === 'direct' && isTimeQuestion(detect)) {
       await respondTime(chatId, st, isPrivate ? undefined : msg.message_id);
@@ -105,7 +111,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
     }
     // вопросы про свет обычными словами: считаем по графику очередей, а не шутим
     // режим «только свет»: на всё, кроме графиков и времени, молчим
-    if (bm === 'light' && !(mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now) || isTimeQuestion(detect)))) {
+    if (bm === 'light' && !(mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now) || isTimeQuestion(detect) || isAlertQuestion(detect)))) {
       console.log('[mode] только свет: не про свет, молчу');
       return;
     }

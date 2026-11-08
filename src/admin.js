@@ -68,6 +68,7 @@ export function chatInfo(id, st, now = Date.now()) {
     memMemes: (st.memory?.memes || []).length,
     mode: botMode(st),
     hardcore: st.settings.hardcore === true,
+    alerts: st.settings.alerts === true,
     now,
   };
 }
@@ -100,7 +101,7 @@ export function cardKeyboard(i) {
       [btn('➖', c('ac', -1)), btn(`Активность ${i.activity}`, c('c')), btn('➕', c('ac', 1))],
       [btn(`Тон: ${TONES[i.tone] || i.tone}`, c('tn')), btn(`Пошлость: ${i.crude}`, c('cr'))],
       [btn(`Режим: ${MODES[i.mode]}`, c('bm')), btn(i.hardcore ? '☠️ Хардкор: ВКЛ' : '☠️ Хардкор: выкл', c('hc'))],
-      [btn(i.life ? '🌱 Жизнь: вкл' : '💤 Жизнь: выкл', c('lf'))],
+      [btn(i.alerts ? '🚨 Тревоги: ВКЛ' : '🚨 Тревоги: выкл', c('al')), btn(i.life ? '🌱 Жизнь: вкл' : '💤 Жизнь: выкл', c('lf'))],
       [btn('✉️ Написать от имени бота', c('sy')), btn('🚪 Выйти из чата', c('lv'))],
       [btn('⬅️ К списку', 'a:l'), btn('🔄', c('c'))],
     ],
@@ -257,6 +258,11 @@ export async function onAction(ctx) {
         await ack(`Активность ${next}`);
         return await showCard(ctx, id);
       }
+      case 'al':
+        st.settings.alerts = !st.settings.alerts;
+        save();
+        await ack(st.settings.alerts ? 'Тревоги включены' : 'Тревоги выключены');
+        return await showCard(ctx, id);
       case 'hc':
         st.settings.hardcore = !st.settings.hardcore;
         save();

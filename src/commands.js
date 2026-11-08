@@ -12,6 +12,7 @@ import { CRUDE_LEVELS, crudeLevel } from './prompts.js';
 import { dossier, statsText, detectTargets } from './analysis.js';
 import { runCatchup, hoursFromText } from './catchup.js';
 import { outageCommand, outageAll } from './outage.js';
+import { alertStatusText } from './alerts.js';
 import { botMode, setBotMode, parseMode, MODES } from './botmode.js';
 import { isAdminId } from './owner.js';
 
@@ -36,6 +37,7 @@ const ALIAS = {
   разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
+  тревога: 'alert', тривога: 'alert', alert: 'alert',
   режим: 'mode', mode: 'mode', хардкор: 'hardcore', hardcore: 'hardcore',
   свет: 'outage', світло: 'outage', график: 'graphs', графік: 'graphs', графики: 'graphs', графіки: 'graphs', graphs: 'graphs', light: 'outage', outage: 'outage',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
@@ -61,6 +63,7 @@ export const BOT_COMMANDS = [
   { command: 'graphs', description: 'График света по всем очередям' },
   { command: 'mode', description: 'Режим: свет / смешанный / без света (админ)' },
   { command: 'hardcore', description: 'Хардкор: агрессивный режим (админ)' },
+  { command: 'alert', description: 'Тревога сейчас и где летит (админ: вкл/выкл)' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
 
@@ -82,7 +85,8 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата
-/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/хардкор [вкл|выкл] — агрессивный режим: злой, нападает первым (только админ бота)
+/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/тревога — есть ли тревога в области и последнее «где летит»; /тревога вкл|выкл — сообщения о тревоге и отбое в чате (только админ бота)
+/хардкор [вкл|выкл] — агрессивный режим: злой, нападает первым (только админ бота)
 /режим свет|смешанный|без света — режим бота в чате (только админ бота)
 /график — график света по всем очередям сейчас (можно и словом «График» без слэша; «графики» тоже работает)`;
 
@@ -93,7 +97,7 @@ export async function handleCommand(ctx, cmd, message) {
   if (!key) return false;
   const bm = botMode(chat(ctx.chat.id));
   if (bm === 'nolight' && (key === 'outage' || key === 'graphs')) return true; // в этом чате света нет
-  if (bm === 'light' && !['help', 'outage', 'graphs', 'mode', 'hardcore'].includes(key)) return true; // «только свет»
+  if (bm === 'light' && !['help', 'outage', 'graphs', 'mode', 'hardcore', 'alert'].includes(key)) return true; // «только свет»
   await exec(ctx, key, cmd, message);
   return true;
 }
@@ -113,6 +117,18 @@ async function exec(ctx, key, cmd, message) {
       setBotMode(st, m);
       save();
       await reply({ light: 'Теперь только свет: графики, прогноз и расчёты, без шуток.', mixed: 'Смешанный режим: свет плюс обычный Батя.', nolight: 'Без света: обычный Батя, графики в этом чате отключены.' }[m]);
+      break;
+    }
+    case 'alert': {
+      const arg = cmd.args.toLowerCase();
+      if (/^(?:вкл|on|выкл|off|вимкн|включ)/.test(arg)) {
+        if (!isAdminId(from.id)) return void (await reply('Включать и выключать тревоги может только админ бота.'));
+        const on = /^(?:вкл|on|включ)/.test(arg);
+        st.settings.alerts = on;
+        save();
+        return void (await reply(on ? '🚨 Тревоги включены: буду писать о тревоге, отбое и «где летит» по области из открытых источников.' : 'Тревоги в этом чате выключены.'));
+      }
+      await reply(await alertStatusText());
       break;
     }
     case 'hardcore': {
