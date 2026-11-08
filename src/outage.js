@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { allChats, hourOf, dayKey, save } from './store.js';
+import { allChats, save } from './store.js';
 import { app, say } from './respond.js';
 import { botOff } from './owner.js';
 
@@ -8,6 +8,15 @@ import { botOff } from './owner.js';
 // data/<регион>.json — данные по очередям (GPV3.1 …), images/<регион>/gpv-3-1.png — готовая картинка.
 
 const RAW = () => `https://raw.githubusercontent.com/${config.outageRepo}/${config.outageBranch}`;
+// Всё время в модуле света — по поясу графика (Киев), а не по BOT_TZ: иначе «сейчас», «сегодня» и утренняя сводка съезжают
+const dayFmt = () => new Intl.DateTimeFormat('en-CA', { timeZone: config.outageTz });
+const hourFmt = () => new Intl.DateTimeFormat('en-GB', { timeZone: config.outageTz, hour: '2-digit', hourCycle: 'h23' });
+const minFmt = () => new Intl.DateTimeFormat('en-GB', { timeZone: config.outageTz, minute: '2-digit' });
+export const dayKey = (ts) => dayFmt().format(ts);
+export const hourOf = (ts) => Number(hourFmt().format(ts));
+/** Минуты от полуночи графика (по Киеву) */
+export const minutesNow = (ts) => hourOf(ts) * 60 + Number(minFmt().format(ts));
+
 const POLL_MS = 3 * 60_000; // новый график должен прийти в чат почти сразу
 const CACHE_MS = 2 * 60_000;
 
@@ -97,7 +106,7 @@ export function daysOf(data, now = Date.now()) {
     const k = dayKey(Number(ts) * 1000);
     const label = k === todayKey ? 'Сьогодні' : k === tomorrowKey ? 'Завтра' : null;
     if (!label) continue;
-    const date = new Date(Number(ts) * 1000).toLocaleDateString('uk-UA', { timeZone: config.tz, day: '2-digit', month: '2-digit' });
+    const date = new Date(Number(ts) * 1000).toLocaleDateString('uk-UA', { timeZone: config.outageTz, day: '2-digit', month: '2-digit' });
     out.push({ label, date, groups: groups || {} });
   }
   return out;

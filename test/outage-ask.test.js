@@ -6,8 +6,9 @@ import path from 'node:path';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ask-'));
 process.env.BOT_TZ = 'UTC';
+process.env.OUTAGE_TZ = 'UTC';
 
-const { isLightQuestion, looseTimes, analyzeWindow, handleLightQuestion, statusNow } = await import('../src/outage-ask.js');
+const { isLightQuestion, isQueueFollowUp, looseTimes, analyzeWindow, handleLightQuestion, statusNow } = await import('../src/outage-ask.js');
 const { _resetOutageCache, setUserGroup } = await import('../src/outage.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
@@ -92,4 +93,17 @@ test('statusNow считает ближайшее изменение', () => {
   const s = statusNow(mkData(), 'GPV6.2', NOW);
   assert.equal(s.on, false);
   assert.equal(s.until, 14 * 60);
+});
+
+test('ответ номером на «какая очередь?» и несуществующая очередь', async () => {
+  const st = chat(-902);
+  let out = await ask('когда у меня свет будет', async () => ({ intent: 'schedule' }), st);
+  assert.match(out, /Не знаю, какая очередь/);
+  assert.ok(isQueueFollowUp(st, 5, '1.1', NOW)); // следом достаточно написать номер
+  assert.ok(!isQueueFollowUp(st, 6, '1.1', NOW)); // другому человеку — нет
+  out = await ask('8.3 моя очередь', async () => ({ intent: 'schedule', queue: '8.3' }), st);
+  assert.match(out, /Очереди 8\.3 в этом регионе нет/);
+  out = await ask('1.1', async () => ({ intent: 'schedule', queue: '1.1' }), st);
+  assert.match(out, /Черга 1\.1/);
+  assert.equal(st.outage.asked[5], undefined);
 });

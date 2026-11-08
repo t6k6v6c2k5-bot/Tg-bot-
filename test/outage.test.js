@@ -9,6 +9,7 @@ process.env.OUTAGE_HOUR = '7';
 process.env.QUIET_FROM = '0';
 process.env.QUIET_TO = '6';
 process.env.BOT_TZ = 'UTC';
+process.env.OUTAGE_TZ = 'UTC';
 
 const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, offIntervals, outageAll, ANNOUNCE, setUserGroup, parseMyQueue, _resetOutageCache } = await import('../src/outage.js');
 const { chat, dayKey } = await import('../src/store.js');

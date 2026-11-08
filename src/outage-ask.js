@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { generate } from './ai.js';
 import { say } from './respond.js';
-import { loadData, listGroups, parseGroup, offIntervals, daysOf, shortName, buildSummary, hhmm } from './outage.js';
+import { loadData, listGroups, parseGroup, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow } from './outage.js';
 
 // Вопросы про свет обычными словами: «Батя, мне надо зарядить машину у Игоря, у него 6.2, поставлю в 10 вечера, заберу в 7 утра».
 // Время и очередь вытаскивает ИИ (или запасной разбор по правилам), а считает код: на арифметике интервалов модели ошибаются.
@@ -16,13 +16,10 @@ export const isLightQuestion = (text) => {
   return STRONG.test(t) || (WEAK.test(t) && QUEUE.test(t));
 };
 
-// ---------- время ----------
-const minutesNow = (now) => {
-  const m = Number(new Intl.DateTimeFormat('en-GB', { timeZone: config.tz, minute: '2-digit' }).format(now));
-  const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: config.tz, hour: '2-digit', hourCycle: 'h23' }).format(now));
-  return h * 60 + m;
-};
+/** Человек отвечает номером очереди на наш вопрос «какая очередь?» (в течение 10 минут), хотя слов про свет в ответе нет */
+export const isQueueFollowUp = (st, uid, text, now = Date.now()) => now - (st.outage?.asked?.[uid] || 0) < 10 * 60_000 && QUEUE.test(text || '');
 
+// ---------- время ----------
 const toMin = (s) => {
   const m = String(s ?? '').match(/^(\d{1,2})(?::(\d{2}))?$/);
   return m ? Math.min(24, Number(m[1])) * 60 + Number(m[2] || 0) : null;
@@ -150,7 +147,7 @@ const SYSTEM = `Ты разбираешь вопросы про отключен
 - queue: очередь, про которую спрашивают (даже если она у другого человека: «у Игоря 6.2»); null, если не названа.`;
 
 async function llmExtract(text, now) {
-  const when = new Date(now).toLocaleString('ru-RU', { timeZone: config.tz, weekday: 'long', hour: '2-digit', minute: '2-digit' });
+  const when = new Date(now).toLocaleString('ru-RU', { timeZone: config.outageTz, weekday: 'long', hour: '2-digit', minute: '2-digit' });
   const res = await generate({ system: SYSTEM, prompt: `Сейчас: ${when}.\nСообщение: «${text}»`, maxTokens: 160, temperature: 0, json: true, high: true });
   if (!res) return null;
   try {
@@ -188,7 +185,14 @@ export async function handleLightQuestion({ chatId, st, from, text, replyTo, now
   const mine = st.outage?.users?.[from.id]?.group;
   const mentioned = parseGroup(text, known) || (parsed.queue ? parseGroup(String(parsed.queue), known) : null);
   const g = mentioned || mine;
+  if (st.outage?.asked) delete st.outage.asked[from.id];
+  const typed = text.match(QUEUE);
+  if (typed && !mentioned && !parseGroup(String(parsed.queue || ''), known) && !parseGroup(text, known)) {
+    await reply(`Очереди ${typed[0].replace(/\s+/g, '').replace(',', '.')} в этом регионе нет. Есть: ${known.map(shortName).join(', ')}.`);
+    return true;
+  }
   if (!g) {
+    (st.outage ||= {}).asked = { ...(st.outage.asked || {}), [from.id]: now };
     await reply(`Не знаю, какая очередь. Назови номер (например 3.1) или запиши свою: «моя очередь 3.1». Есть: ${known.map(shortName).join(', ')}.`);
     return true;
   }
