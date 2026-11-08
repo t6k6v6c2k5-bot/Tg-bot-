@@ -128,6 +128,56 @@ export function buildMessage(data, byGroup, { title, tag = false, now = Date.now
   return { text: text.trimEnd(), entities };
 }
 
+/** Сегодня и завтра из данных: [{label, date:'09.11', groups}] */
+export function daysOf(data, now = Date.now()) {
+  const todayKey = dayKey(now);
+  const tomorrowKey = dayKey(now + 24 * 3600_000);
+  const out = [];
+  for (const [ts, groups] of Object.entries(data?.fact?.data || {}).sort(([a], [b]) => a - b)) {
+    const k = dayKey(Number(ts) * 1000);
+    const label = k === todayKey ? 'Сьогодні' : k === tomorrowKey ? 'Завтра' : null;
+    if (!label) continue;
+    const date = new Date(Number(ts) * 1000).toLocaleDateString('uk-UA', { timeZone: config.tz, day: '2-digit', month: '2-digit' });
+    out.push({ label, date, groups: groups || {} });
+  }
+  return out;
+}
+
+/**
+ * Общая сводка по ВСЕМ очередям: по дням, строка на очередь, рядом имена людей, у кого она записана.
+ * changed — очереди, у которых график поменялся: помечаются 🔄, их люди тегаются (придёт уведомление).
+ * @returns {{text:string, entities:object[]}}
+ */
+export function buildSummary(data, people, { title, days = ['Сьогодні', 'Завтра'], changed = new Set(), now = Date.now() } = {}) {
+  const sections = daysOf(data, now).filter((d) => days.includes(d.label));
+  let text = title;
+  const entities = [];
+  for (const d of sections) {
+    text += `\n\n${d.label} (${d.date}):`;
+    for (const g of listGroups({ fact: { data: { x: d.groups } } })) {
+      const { off, maybe } = offIntervals(d.groups[g]);
+      const hit = changed.has(g);
+      text += `\n${hit ? '🔄' : '•'} ${shortName(g)}`;
+      const who = people[g] || [];
+      if (who.length) {
+        text += ' (';
+        who.forEach((p, i) => {
+          if (i) text += ', ';
+          if (hit && p.username) text += `@${p.username}`;
+          else {
+            if (hit) entities.push({ type: 'text_mention', offset: text.length, length: p.name.length, user: { id: Number(p.uid) } });
+            text += p.name;
+          }
+        });
+        text += ')';
+      }
+      text += `: ${off.length ? fmt(off) : 'без відключень'}${maybe.length ? `; можливо ${fmt(maybe)}` : ''}`;
+    }
+  }
+  if (!sections.length) text += '\n\nДаних про графік поки немає.';
+  return { text, entities };
+}
+
 async function sendImage(chatId, g, data, fetchFn = fetch) {
   const buf = await getBuffer(imageUrl(g), fetchFn);
   await app.telegram.sendPhoto(chatId, { source: buf }, { caption: `💡 Черга ${shortName(g)}${updated(data) ? ` · оновлено ${updated(data)}` : ''}` });
@@ -204,34 +254,42 @@ export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = f
 
 const isQuiet = (hour) => (config.quietFrom <= config.quietTo ? hour >= config.quietFrom && hour < config.quietTo : hour >= config.quietFrom || hour < config.quietTo);
 
-/** Раз в минуту из планировщика: утренний график и сообщение при изменении (ночью не будим — всё придёт утром). */
+/** Раз в минуту из планировщика: утренняя и вечерняя сводка по всем очередям и сообщение при изменении (ночью не будим). */
 export async function outageTick(now = Date.now(), fetchFn = fetch) {
   if (botOff() || !app.telegram) return;
   const chats = allChats().filter(([id, st]) => id < 0 && st.outage?.users && Object.keys(st.outage.users).length && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
   if (!chats.length || now - lastPoll < POLL_MS) return;
   lastPoll = now;
   const data = await loadData(fetchFn, now);
+  const all = listGroups(data);
   const hour = hourOf(now);
   const today = dayKey(now);
+  const hasTomorrow = daysOf(data, now).some((d) => d.label === 'Завтра');
   for (const [chatId, st] of chats) {
     const o = sub(st);
-    const by = peopleByGroup(o);
+    const people = peopleByGroup(o);
+    const hashes = Object.fromEntries(all.map((g) => [g, groupHash(data, g)]));
+    const baseline = () => Object.assign(o.hashes, hashes);
+    const send = async (m) => say(chatId, st, m.text, undefined, m.entities.length ? { entities: m.entities } : {});
     try {
-      if (hour >= config.outageHour && o.morningDay !== today && !isQuiet(hour)) {
+      if (isQuiet(hour)) continue;
+      if (hour >= config.outageHour && o.morningDay !== today) {
         o.morningDay = today;
-        for (const g of Object.keys(by)) o.hashes[g] = groupHash(data, g);
+        baseline();
         save();
-        const m = buildMessage(data, by, { title: 'Доброго ранку! Світло на сьогодні:', now });
-        await say(chatId, st, m.text);
-      } else if (!isQuiet(hour)) {
-        const changed = Object.keys(by).filter((g) => o.hashes[g] !== groupHash(data, g));
-        if (changed.length) {
-          const sel = Object.fromEntries(changed.map((g) => [g, by[g]]));
-          for (const g of changed) o.hashes[g] = groupHash(data, g);
+        await send(buildSummary(data, people, { title: 'Доброго ранку! Світло по всіх чергах:', now }));
+      } else if (hour >= config.outageEveningHour && o.eveningDay !== today && hasTomorrow) {
+        o.eveningDay = today;
+        baseline();
+        save();
+        await send(buildSummary(data, people, { title: 'Добрий вечір! Світло на завтра по всіх чергах:', days: ['Завтра'], now }));
+      } else {
+        const changed = new Set(all.filter((g) => o.hashes[g] !== undefined && o.hashes[g] !== hashes[g]));
+        baseline();
+        if (changed.size) {
           save();
-          const m = buildMessage(data, sel, { title: 'Графік змінився:', tag: true, now });
-          await say(chatId, st, m.text, undefined, m.entities.length ? { entities: m.entities } : {});
-        }
+          await send(buildSummary(data, people, { title: `Графік змінився (черги: ${[...changed].map(shortName).join(', ')}):`, changed, now }));
+        } else save();
       }
     } catch (e) {
       console.error('[outage]', chatId, e.message);

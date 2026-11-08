@@ -81,7 +81,8 @@ export const config = {
   outageRepo: env.OUTAGE_REPO || 'Baskerville42/outage-data-ua',
   outageBranch: env.OUTAGE_BRANCH || 'main',
   outageRegion: env.OUTAGE_REGION || 'dnipro', // dnipro | kyiv | kyiv-region | odesa
-  outageHour: num('OUTAGE_HOUR', 7), // утренний график (по BOT_TZ)
+  outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
+  outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра
   historyInPrompt: 18,
   maxReplyChars: 500,
 };

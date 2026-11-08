@@ -58,7 +58,8 @@ test('запоминает очередь человека, утром пише�
   const vlad = { id: 10, first_name: 'Влад' };
   const olya = { id: 11, first_name: 'Оля', username: 'olya' };
   const t0 = Date.UTC(2026, 10, 9, 8, 0); // 08:00 UTC
-  data = { fact: { update: 'x', data: { [Date.UTC(2026, 10, 9) / 1000]: { 'GPV3.1': { 5: 'no', 6: 'no' }, 'GPV4.2': { 1: 'yes' } } } } };
+  const base = { 'GPV3.1': { 5: 'no', 6: 'no' }, 'GPV4.2': { 1: 'yes' }, 'GPV5.2': { 1: 'yes' } };
+  data = { fact: { update: 'x', data: { [Date.UTC(2026, 10, 9) / 1000]: base } } };
   await outageCommand(-555, st, '3.1', 1, vlad, fakeFetch);
   assert.match(sent[0][2], /Черга 3\.1 \(Влад\)/);
   assert.match(sent[0][2], /04:00–06:00/);
@@ -70,18 +71,30 @@ test('запоминает очередь человека, утром пише�
   await outageTick(t0, fakeFetch);
   assert.equal(sent.length, 1);
   assert.match(sent[0][2], /Доброго ранку/);
-  assert.match(sent[0][2], /Черга 3\.1 \(Влад\)/);
-  assert.match(sent[0][2], /Черга 4\.2 \(Оля\)/);
+  assert.match(sent[0][2], /• 3\.1 \(Влад\): 04:00–06:00/);
+  assert.match(sent[0][2], /• 4\.2 \(Оля\): без відключень/);
+  assert.match(sent[0][2], /• 5\.2: без відключень/); // очереди без людей тоже в общей сводке
 
-  data = { fact: { update: 'y', data: { [Date.UTC(2026, 10, 9) / 1000]: { 'GPV3.1': { 5: 'no' }, 'GPV4.2': { 1: 'yes' } } } } };
+  data = { fact: { update: 'y', data: { [Date.UTC(2026, 10, 9) / 1000]: { ...base, 'GPV3.1': { 5: 'no' } } } } };
   _resetOutageCache();
   sent.length = 0;
   await outageTick(t0 + 11 * 60_000, fakeFetch);
   assert.equal(sent.length, 1);
-  assert.match(sent[0][2], /змінився/);
-  assert.match(sent[0][2], /Черга 3\.1/);
-  assert.doesNotMatch(sent[0][2], /4\.2/);
+  assert.match(sent[0][2], /змінився \(черги: 3\.1\)/);
+  assert.match(sent[0][2], /🔄 3\.1 \(Влад\): 04:00–05:00/);
+  assert.match(sent[0][2], /• 4\.2 \(Оля\)/); // остальные очереди тоже в сводке, но без пометки
   assert.equal(sent[0][3]?.[0]?.type, 'text_mention'); // у Влада нет ника — тег через text_mention
+
+  // вечером — сводка на завтра, как только завтрашний график вышел
+  const tomorrow = { [Date.UTC(2026, 10, 9) / 1000]: base, [Date.UTC(2026, 10, 10) / 1000]: { 'GPV3.1': { 20: 'no' }, 'GPV4.2': { 1: 'yes' } } };
+  data = { fact: { data: tomorrow } };
+  _resetOutageCache();
+  sent.length = 0;
+  await outageTick(Date.UTC(2026, 10, 9, 20, 30), fakeFetch);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0][2], /Добрий вечір/);
+  assert.match(sent[0][2], /Завтра \(10\.11\)/);
+  assert.doesNotMatch(sent[0][2], /Сьогодні/);
 
   // ночью не будим
   data = { fact: { data: { [Date.UTC(2026, 10, 10) / 1000]: { 'GPV3.1': { 1: 'no' } } } } };
