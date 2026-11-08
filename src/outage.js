@@ -61,7 +61,7 @@ export function groupHash(data, g) {
 const updated = (data) => data?.fact?.update || data?.fact?.updateFact || '';
 
 // ---------- расписание в человеческом виде ----------
-const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+export const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 /** Интервалы без света за день: {off:[[с,по]…], maybe:[[с,по]…]} в минутах. Час i (1..24) = (i-1):00–i:00; first/second — первая/вторая половина часа. */
 export function offIntervals(sched) {

@@ -10,6 +10,7 @@ import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
+import { isLightQuestion, handleLightQuestion } from './outage-ask.js';
 
 /**
  * Общий путь для любого сообщения человека — текст, расшифрованное голосовое, описанное фото.
@@ -86,6 +87,11 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   if (mode === 'direct' && replyToBot && isCriticism(detect)) mode = 'critic';
   console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);
   if (mode) {
+    // вопросы про свет обычными словами: считаем по графику очередей, а не шутим
+    if (mode === 'direct' && isLightQuestion(detect)) {
+      await handleLightQuestion({ chatId, st, from: msg.from, text: detect, replyTo: isPrivate ? undefined : msg.message_id });
+      return;
+    }
     if (mode === 'direct' && isCatchupRequest(detect)) {
       await runCatchup(chatId, st, {
         uid: msg.from.id,
