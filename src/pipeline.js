@@ -10,7 +10,7 @@ import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
 import { renameNote } from './rename.js';
-import { botMode } from './botmode.js';
+import { botMode, hardcore } from './botmode.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
 import { isTimeQuestion, timeAnswer } from './clock.js';
 import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-ask.js';
@@ -69,7 +69,8 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   let mode = decide({ direct, text, st, now });
-  if (!selfTalk() && !direct) mode = null; // сам не пишет: только когда позвали
+  const talks = selfTalk() || hardcore(st);
+  if (!talks && !direct) mode = null; // сам не пишет: только когда позвали
   // дерзость со сменой имени: отвечаем сами, даже в режиме «молчун»
   const note = bm === 'mixed' && !isPrivate && !mode && !record ? renameNote(st, msg.from.id, nameChange, now) : null;
   if (note) {
@@ -127,14 +128,14 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   // Дешёвая реакция без ИИ
-  const emoji = selfTalk() && bm === 'mixed' ? cheapReaction({ text, st, now }) : null;
+  const emoji = talks && bm === 'mixed' ? cheapReaction({ text, st, now }) : null;
   if (emoji && (await react(chatId, msg.message_id, emoji))) {
     st.lastReactAt = now;
     save();
     return;
   }
 
-  if (selfTalk() && bm === 'mixed' && !isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
+  if (talks && bm === 'mixed' && !isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
 }
 
 async function respondTime(chatId, st, replyTo) {

@@ -67,6 +67,7 @@ export function chatInfo(id, st, now = Date.now()) {
     memPeople: withFacts,
     memMemes: (st.memory?.memes || []).length,
     mode: botMode(st),
+    hardcore: st.settings.hardcore === true,
     now,
   };
 }
@@ -77,7 +78,7 @@ export function cardText(i, note = '') {
     `ID: ${i.id}`,
     `Участники: знаю ${i.known}${i.total ? ` из ~${i.total}` : ''}. Писали за сутки: ${i.msgs24} сообщ. Последнее: ${i.last ? ago(i.now - i.last) : 'нет'}.`,
     `Активность ${i.activity}/5 · тон: ${TONES[i.tone] || i.tone} · пошлость ${i.crude} · своя жизнь: ${i.life ? 'вкл' : 'выкл'}${i.mutedMin ? ` · 🤫 молчу ещё ${i.mutedMin} мин` : ''}`,
-    `Режим: ${MODES[i.mode]}`,
+    `Режим: ${MODES[i.mode]}${i.hardcore ? ' · ☠️ ХАРДКОР' : ''}`,
     `Инициатив за сутки: ${i.used}/${i.cap} (отзывчивость чата ${i.engage}%).`,
     `Память: людей с записями ${i.memPeople}, мемов ${i.memMemes}.`,
     note ? `\n${note}` : '',
@@ -98,7 +99,7 @@ export function cardKeyboard(i) {
       i.mutedMin ? [btn('🔊 Снять тишину', c('um'))] : [btn('🤫 Тихо на 1 ч', c('mu'))],
       [btn('➖', c('ac', -1)), btn(`Активность ${i.activity}`, c('c')), btn('➕', c('ac', 1))],
       [btn(`Тон: ${TONES[i.tone] || i.tone}`, c('tn')), btn(`Пошлость: ${i.crude}`, c('cr'))],
-      [btn(`Режим: ${MODES[i.mode]}`, c('bm'))],
+      [btn(`Режим: ${MODES[i.mode]}`, c('bm')), btn(i.hardcore ? '☠️ Хардкор: ВКЛ' : '☠️ Хардкор: выкл', c('hc'))],
       [btn(i.life ? '🌱 Жизнь: вкл' : '💤 Жизнь: выкл', c('lf'))],
       [btn('✉️ Написать от имени бота', c('sy')), btn('🚪 Выйти из чата', c('lv'))],
       [btn('⬅️ К списку', 'a:l'), btn('🔄', c('c'))],
@@ -256,6 +257,11 @@ export async function onAction(ctx) {
         await ack(`Активность ${next}`);
         return await showCard(ctx, id);
       }
+      case 'hc':
+        st.settings.hardcore = !st.settings.hardcore;
+        save();
+        await ack(st.settings.hardcore ? 'ХАРДКОР включён' : 'Хардкор выключен');
+        return await showCard(ctx, id);
       case 'bm':
         setBotMode(st, NEXT[botMode(st)]);
         save();

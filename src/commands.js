@@ -36,7 +36,7 @@ const ALIAS = {
   разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
-  режим: 'mode', mode: 'mode',
+  режим: 'mode', mode: 'mode', хардкор: 'hardcore', hardcore: 'hardcore',
   свет: 'outage', світло: 'outage', график: 'graphs', графік: 'graphs', графики: 'graphs', графіки: 'graphs', graphs: 'graphs', light: 'outage', outage: 'outage',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
 };
@@ -60,6 +60,7 @@ export const BOT_COMMANDS = [
   { command: 'light', description: 'Свет: /свет 3.1 запомнит твою очередь' },
   { command: 'graphs', description: 'График света по всем очередям' },
   { command: 'mode', description: 'Режим: свет / смешанный / без света (админ)' },
+  { command: 'hardcore', description: 'Хардкор: агрессивный режим (админ)' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
 
@@ -81,7 +82,8 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата
-/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/режим свет|смешанный|без света — режим бота в чате (только админ бота)
+/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/хардкор [вкл|выкл] — агрессивный режим: злой, нападает первым (только админ бота)
+/режим свет|смешанный|без света — режим бота в чате (только админ бота)
 /график — график света по всем очередям сейчас (можно и словом «График» без слэша; «графики» тоже работает)`;
 
 // true — сообщение было командой (нашей или чужой), дальше его разбирать не нужно
@@ -91,7 +93,7 @@ export async function handleCommand(ctx, cmd, message) {
   if (!key) return false;
   const bm = botMode(chat(ctx.chat.id));
   if (bm === 'nolight' && (key === 'outage' || key === 'graphs')) return true; // в этом чате света нет
-  if (bm === 'light' && !['help', 'outage', 'graphs', 'mode'].includes(key)) return true; // «только свет»
+  if (bm === 'light' && !['help', 'outage', 'graphs', 'mode', 'hardcore'].includes(key)) return true; // «только свет»
   await exec(ctx, key, cmd, message);
   return true;
 }
@@ -111,6 +113,15 @@ async function exec(ctx, key, cmd, message) {
       setBotMode(st, m);
       save();
       await reply({ light: 'Теперь только свет: графики, прогноз и расчёты, без шуток.', mixed: 'Смешанный режим: свет плюс обычный Батя.', nolight: 'Без света: обычный Батя, графики в этом чате отключены.' }[m]);
+      break;
+    }
+    case 'hardcore': {
+      if (!isAdminId(from.id)) return void (await reply('Хардкор включает только админ бота.'));
+      const arg = cmd.args.toLowerCase();
+      const on = /^(?:вкл|on|да|1|включ)/.test(arg) ? true : /^(?:выкл|off|нет|0|отбой|стоп)/.test(arg) ? false : !st.settings.hardcore;
+      st.settings.hardcore = on;
+      save();
+      await reply(on ? '☠️ ХАРДКОР включён. Теперь я злой, дерзкий и могу напасть первым. Отбой: /хардкор выкл' : 'Хардкор выключен, возвращаюсь в обычный режим.');
       break;
     }
     case 'graphs':

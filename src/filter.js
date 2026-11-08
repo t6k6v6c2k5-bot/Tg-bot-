@@ -1,4 +1,5 @@
 // Ступень 1: дешёвый фильтр без ИИ. Только чистые функции — легко тестировать.
+import { effActivity } from './botmode.js';
 
 export const LEVELS = {
   1: { p: 0.02, cap: 1 },
@@ -40,7 +41,7 @@ export function isSerious(history, n = 6) {
 export function canSpeakUnsolicited(st, now) {
   if (st.settings.mutedUntil > now) return false;
   st.unsol = st.unsol.filter((t) => now - t < HOUR_MS);
-  const { cap } = LEVELS[st.settings.activity];
+  const { cap } = LEVELS[effActivity(st)];
   if (st.unsol.length >= cap) return false;
   if (now - st.lastUnsolAt < UNSOL_MIN_GAP_MS) return false;
   if (st.history.slice(-3).some((m) => m.bot)) return false; // только что говорили
@@ -53,7 +54,7 @@ export function decide({ direct, text, st, now, rng = Math.random }) {
   if (st.settings.mutedUntil > now) return null;
   if (direct) return 'direct';
   if (!canSpeakUnsolicited(st, now)) return null;
-  const { p } = LEVELS[st.settings.activity];
+  const { p } = LEVELS[effActivity(st)];
   if (TRIGGER.test(text)) return rng() < Math.min(0.5, p * 6) ? 'trigger' : null;
   return rng() < p ? 'random' : null;
 }
@@ -62,7 +63,7 @@ export function decide({ direct, text, st, now, rng = Math.random }) {
 export function cheapReaction({ text, st, now, rng = Math.random }) {
   if (st.settings.mutedUntil > now || now - st.lastReactAt < 90_000) return null;
   if (isSerious(st.history)) return null;
-  const { p } = LEVELS[st.settings.activity];
+  const { p } = LEVELS[effActivity(st)];
   if (rng() >= p * 2.5) return null;
   if (LAUGH.test(text)) return '🤣';
   if (WIN.test(text)) return '🔥';

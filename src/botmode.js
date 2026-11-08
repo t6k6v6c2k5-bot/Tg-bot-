@@ -17,3 +17,8 @@ export function parseMode(text) {
   if (/свет|свiт|світ|light|прогноз|график|тільки|только/.test(t)) return 'light';
   return null;
 }
+
+/** Хардкор: агрессивный режим, бот нападает первым. В режиме «только свет» не действует. */
+export const hardcore = (st) => st?.settings?.hardcore === true && botMode(st) !== 'light';
+/** Уровень активности с учётом хардкора (там всегда максимум) */
+export const effActivity = (st) => (hardcore(st) ? 5 : st.settings.activity);

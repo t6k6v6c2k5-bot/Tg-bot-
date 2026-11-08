@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { botOff, selfTalk } from './owner.js';
 import { outageTick } from './outage.js';
-import { botMode } from './botmode.js';
+import { botMode, hardcore, effActivity } from './botmode.js';
 import { allChats, dayKey, hourOf, save } from './store.js';
 import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
@@ -31,7 +31,7 @@ async function tick() {
         await learn(chatId, st);
         save();
       }
-      if (!selfTalk() || botMode(st) === 'light') continue; // сам не пишет: ни итогов, ни оживлений
+      if (!(selfTalk() || hardcore(st)) || botMode(st) === 'light') continue; // сам не пишет: ни итогов, ни оживлений
       if (st.settings.mutedUntil > now) continue;
 
       // Итоги дня — раз в сутки
@@ -72,7 +72,7 @@ export function watchQuestion(chatId, st, messageId) {
       pending.delete(chatId);
       const last = st.history[st.history.length - 1];
       if (!last || last.id !== messageId) return; // кто-то уже ответил
-      if (!canSpeakUnsolicited(st, Date.now()) || Math.random() > LEVELS[st.settings.activity].p * 6) return;
+      if (!canSpeakUnsolicited(st, Date.now()) || Math.random() > LEVELS[effActivity(st)].p * 6) return;
       await respond(chatId, st, { mode: 'unanswered', replyTo: messageId });
     }, 4 * 60_000),
   );

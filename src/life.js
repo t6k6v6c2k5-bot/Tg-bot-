@@ -11,6 +11,7 @@ import { factsAbout } from './memory.js';
 import { isSerious } from './filter.js';
 import { sendRevive } from './commands.js';
 import { isAdminId, ownerSerious } from './owner.js';
+import { hardcore, effActivity } from './botmode.js';
 
 // «Жизнь» Бати: он сам заговаривает, когда долго тихо, зовёт людей по имени,
 // здоровается утром и травит байки. Всё в рамках предохранителей.
@@ -42,7 +43,7 @@ export const engagement = (st) => st.engage ?? 0.5;
 
 // Сколько инициатив Батя позволяет себе за сутки: 4 при глухом чате, 10 при отзывчивом (на уровне 5)
 export function dailyCap(st) {
-  const ceil = CEILING[st.settings.activity] ?? 0;
+  const ceil = hardcore(st) ? 16 : CEILING[st.settings.activity] ?? 0;
   if (!ceil) return 0;
   return Math.max(1, Math.round(ceil * clamp(0.4 + engagement(st), 0.4, 1)));
 }
@@ -79,7 +80,7 @@ export function silenceThreshold(st) {
     if (prev && m.ts - prev < 6 * H) gaps.push(m.ts - prev);
     prev = m.ts;
   }
-  const level = st.settings.activity;
+  const level = effActivity(st);
   if (gaps.length < 30) return SILENCE_MS[level] ?? 2 * H;
   gaps.sort((x, y) => x - y);
   const median = gaps[Math.floor(gaps.length / 2)];
@@ -174,15 +175,16 @@ export function pickInitiative(st, now, { hour, today, rng = Math.random }) {
   const cap = dailyCap(st);
   st.initLog = (st.initLog || []).filter((t) => now - t < 24 * H);
   if (!cap || st.initLog.length >= cap) return null;
-  if ((st.ignored || 0) >= 2) return null; // чат дважды проигнорировал — ждём, пока кто-то заговорит
+  const hc = hardcore(st);
+  if (!hc && (st.ignored || 0) >= 2) return null; // чат дважды проигнорировал — ждём, пока кто-то заговорит
   // после удачной инициативы можно скорее, после проигнорированной — подождать
-  const gap = (st.ignored || 0) >= 1 ? 90 * 60_000 : engagement(st) > 0.6 ? 30 * 60_000 : 45 * 60_000;
+  const gap = hc ? 12 * 60_000 : (st.ignored || 0) >= 1 ? 90 * 60_000 : engagement(st) > 0.6 ? 30 * 60_000 : 45 * 60_000;
   if (now - Math.max(st.lastInitAt || 0, st.initTryAt || 0) < gap) return null;
   if (isSerious(st.history)) return null;
 
   const human = lastHumanTs(st);
   if (!human || now - human > 3 * 24 * H || st.history.length < 15) return null; // чат неживой
-  if (rng() > 0.25) return null; // джиттер: не в первую же минуту
+  if (rng() > (hc ? 0.6 : 0.25)) return null; // джиттер: не в первую же минуту
 
   const wake = wakeHourFor(st);
   if (hour >= wake && hour < wake + 2 && st.lastGreetDay !== today && now - human < 2 * 24 * H) return 'greeting';
@@ -194,10 +196,10 @@ export function pickInitiative(st, now, { hour, today, rng = Math.random }) {
   if (pickPokeTarget(st, now, () => 0)) options.push('poke');
   if (now - (st.lastTaleAt || 0) > 20 * H) options.push('tale');
   // дерзкий подкол с тегом: не на мягком тоне, не чаще раза в 4 часа
-  if (s.tone !== 'soft' && s.activity >= 3 && now - (st.lastNeedleAt || 0) > 4 * H && pickNeedleTarget(st, now, () => 0)) options.push('needle');
+  if ((hc || (s.tone !== 'soft' && s.activity >= 3)) && now - (st.lastNeedleAt || 0) > (hc ? 1 * H : 4 * H) && pickNeedleTarget(st, now, () => 0)) options.push('needle');
   if (!options.length) return null;
   // чаще то, на что в этом чате откликаются
-  const weight = (k) => ({ tale: 1, needle: 2 }[k] ?? 3) * (0.5 + (st.kindStats?.[k]?.ema ?? 0.5));
+  const weight = (k) => ({ tale: 1, needle: hc ? 8 : 2 }[k] ?? 3) * (0.5 + (st.kindStats?.[k]?.ema ?? 0.5));
   let r = rng() * options.reduce((a, k) => a + weight(k), 0);
   for (const k of options) if ((r -= weight(k)) < 0) return k;
   return options[0];
@@ -291,7 +293,7 @@ export async function runInitiative(chatId, st, kind, today) {
     const lines = st.history.filter((m) => !m.bot && String(m.uid) === String(target.uid) && now - m.ts < 24 * H && !m.text.startsWith('[')).slice(-6).map((m) => m.text);
     if (lines.length < 2) return;
     const handle = u.username ? `@${u.username}` : '';
-    const r = await ask(st, needlePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, history: st.history }), 160, undefined, (t) => isGrounded(t, lines));
+    const r = await ask(st, needlePrompt({ name: u.name, handle, facts: factsAbout(st, target.uid).slice(-4), lines, history: st.history, hard: hardcore(st) }), 160, undefined, (t) => isGrounded(t, lines));
     if (r?.type !== 'text') return;
     st.roastLast[target.uid] = now;
     const m = withMention(u, target.uid, r.text);

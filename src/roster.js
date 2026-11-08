@@ -1,4 +1,5 @@
 import { app } from './respond.js';
+import { effActivity } from './botmode.js';
 import { config } from './config.js';
 import { touchUser, remember, chat, save, touchChat } from './store.js';
 import { isDirect, LEVELS } from './filter.js';
@@ -71,7 +72,7 @@ export async function ingestNonText(ctx) {
       }
     } else if (kind === 'photo' && mediaBudgetOk(st, now)) {
       // описываем всегда, если обратились; иначе — иногда (экономим квоту)
-      if (addressed || Math.random() < Math.min(0.5, LEVELS[st.settings.activity].p * 4)) {
+      if (addressed || Math.random() < Math.min(0.5, LEVELS[effActivity(st)].p * 4)) {
         st.mediaLog.push(now);
         const d = await describePhoto(m);
         if (d) {
