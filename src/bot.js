@@ -32,6 +32,11 @@ export async function createBot() {
     const cmd = parseCommand(text) || (plain ? { name: plain[1].toLowerCase(), args: '' } : null);
     if (cmd && (await handleCommand(ctx, cmd, msg))) return;
 
+    // имя сменили с прошлого сообщения? (Telegram не присылает событие смены имени, видим только по новому сообщению)
+    const oldName = st.users[msg.from.id]?.name;
+    const newName = msg.from.first_name || msg.from.username || 'аноним';
+    const nameChange = oldName && oldName !== newName ? { from: oldName, to: newName } : null;
+
     remember(st, {
       id: msg.message_id,
       uid: msg.from.id,
@@ -41,7 +46,7 @@ export async function createBot() {
       ts: Date.now(),
       replyTo: msg.reply_to_message?.from?.is_bot ? undefined : msg.reply_to_message?.from?.id,
     });
-    await processMessage(ctx, st, msg, { text });
+    await processMessage(ctx, st, msg, { text, nameChange });
   });
 
   bot.action(/^a:/, (ctx) => onAction(ctx)); // кнопки админки (проверка прав внутри)

@@ -9,6 +9,7 @@ import { onHumanMessage, noteHour } from './life.js';
 import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
+import { renameNote } from './rename.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
 import { isTimeQuestion, timeAnswer } from './clock.js';
 import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-ask.js';
@@ -20,7 +21,7 @@ import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-
  * @param {string} [o.detect]  по какому тексту искать обращение (для фото — только подпись)
  * @param {boolean} [o.record] только учёт (статистика, «жизнь»), без ответа
  */
-export async function processMessage(ctx, st, msg, { text, detect = text, record = false }) {
+export async function processMessage(ctx, st, msg, { text, detect = text, record = false, nameChange = null }) {
   if (botOff()) return; // бот выключен админом
   const chatId = ctx.chat.id;
   const isPrivate = ctx.chat.type === 'private';
@@ -67,6 +68,12 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
 
   let mode = decide({ direct, text, st, now });
   if (!selfTalk() && !direct) mode = null; // сам не пишет: только когда позвали
+  // дерзость со сменой имени: отвечаем сами, даже в режиме «молчун»
+  const note = !isPrivate && !mode && !record ? renameNote(st, msg.from.id, nameChange, now) : null;
+  if (note) {
+    mode = 'direct';
+    console.log(`[rename] ${nameChange.from} → ${nameChange.to}: отвечаю на дерзость`);
+  }
   // Человек поставил точку («понял», «ок», «збс», «спасибо», «ахах», 👍) — разговор окончен: не отвечаем,
   // модель не дёргаем; иногда ставим реакцию, чтобы не выглядело, будто бот проигнорировал
   // «да» в ответ на вопрос самого бота — не точка, а ответ: на него отвечаем
@@ -74,7 +81,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
     const prev = [...st.history].slice(0, -1).reverse().find((m) => m.bot);
     return Boolean(prev && /\?\s*$/.test(prev.text) && now - prev.ts < 10 * 60_000);
   })();
-  const closer = mode && (mode === 'direct' || mode === 'critic') && !botAsked ? closerKind(detect) : null;
+  const closer = mode && (mode === 'direct' || mode === 'critic') && !botAsked && !note ? closerKind(detect) : null;
   if (closer) {
     console.log(`[closer] «${detect.slice(0, 30)}» (${closer}) — разговор окончен, молчу`);
     const emoji = { thanks: '🤝', laugh: '😁', emoji: '👍', ack: '👌', praise: '😎' }[closer];
@@ -108,7 +115,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
       });
       return;
     }
-    await respond(chatId, st, { mode, replyTo: isPrivate ? undefined : msg.message_id });
+    await respond(chatId, st, { mode, replyTo: isPrivate ? undefined : msg.message_id, note });
     return;
   }
 

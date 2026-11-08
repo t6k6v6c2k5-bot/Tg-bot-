@@ -61,7 +61,7 @@ export async function react(chatId, messageId, emoji) {
 }
 
 // Ступень 2: идём в ИИ, он может ответить SKIP
-export async function respond(chatId, st, { mode, replyTo }) {
+export async function respond(chatId, st, { mode, replyTo, note = '' }) {
   if (busy.has(chatId)) {
     // самовольные реплики при занятом чате отбрасываем, а к прямым обращениям встаём в очередь (до 25 с)
     if (mode !== 'direct' && mode !== 'critic') {
@@ -105,7 +105,7 @@ export async function respond(chatId, st, { mode, replyTo }) {
     }
     const endNote = chain >= 3 ? `\n\nВНИМАНИЕ: вы с этим человеком уже обменялись ${chain} репликами подряд. Заверши обмен ОДНОЙ короткой фразой-точкой с юмором. Формат REACT здесь запрещён, SKIP тоже: нужна именно текстовая реплика. Не разгоняй разговор дальше и не задавай встречных вопросов.` : '';
     const seriousNote = serious ? '\n\nВНИМАНИЕ: человек прямо просит без подколов и шуток. Ответь серьёзно, по существу и по делу, без иронии, сарказма и подначек. Не припоминай ему его слова.' : '';
-    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock) + endNote + seriousNote;
+    const prompt = chatPrompt(st.history, mode, direct ? 30 : config.historyInPrompt, dataBlock) + endNote + seriousNote + (note ? `\n\nКОНТЕКСТ: ${note}` : '');
     // Остроумие: без блока данных (аналитика, пересказы) — пишем варианты и выбираем лучший
     const useWit = !dataBlock && mode !== 'critic' && !serious;
     const popts = direct ? { maxLines: 6, maxChars: 800 } : undefined;
