@@ -8,8 +8,8 @@ import { botOff } from './owner.js';
 // data/<регион>.json — данные по очередям (GPV3.1 …), images/<регион>/gpv-3-1.png — готовая картинка.
 
 const RAW = () => `https://raw.githubusercontent.com/${config.outageRepo}/${config.outageBranch}`;
-const POLL_MS = 10 * 60_000;
-const CACHE_MS = 5 * 60_000;
+const POLL_MS = 3 * 60_000; // новый график должен прийти в чат почти сразу
+const CACHE_MS = 2 * 60_000;
 
 let cache = { at: 0, data: null };
 let lastPoll = 0;
@@ -261,10 +261,15 @@ export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = f
 
 const isQuiet = (hour) => (config.quietFrom <= config.quietTo ? hour >= config.quietFrom && hour < config.quietTo : hour >= config.quietFrom || hour < config.quietTo);
 
-/** Раз в минуту из планировщика: утренняя и вечерняя сводка по всем очередям и сообщение при изменении (ночью не будим). */
+export const ANNOUNCE = 'Кто хочет получать уведомления о графике света с отметкой, напишите «моя очередь 3.1» (свой номер, например 6.2) или команду /свет 3.1. Я запомню и отмечу вас сразу, как только выйдет новый график. /график покажет все очереди, /свет стоп отпишет.';
+
+/**
+ * Раз в минуту из планировщика: один раз зовём подписаться, дальше утренняя и вечерняя сводки по всем очередям
+ * и сразу сообщение с отметками подписчиков, как только вышел новый график или он поменялся (ночью не будим).
+ */
 export async function outageTick(now = Date.now(), fetchFn = fetch) {
   if (botOff() || !app.telegram) return;
-  const chats = allChats().filter(([id, st]) => id < 0 && st.outage?.users && Object.keys(st.outage.users).length && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
+  const chats = allChats().filter(([id, st]) => id < 0 && st.outage && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
   if (!chats.length || now - lastPoll < POLL_MS) return;
   lastPoll = now;
   const data = await loadData(fetchFn, now);
@@ -280,23 +285,35 @@ export async function outageTick(now = Date.now(), fetchFn = fetch) {
     const send = async (m) => say(chatId, st, m.text, undefined, { entities: m.entities });
     try {
       if (isQuiet(hour)) continue;
+      if (!o.announced) {
+        o.announced = true;
+        save();
+        await say(chatId, st, ANNOUNCE);
+        continue;
+      }
+      if (!Object.keys(o.users).length) continue;
+      const changed = new Set(all.filter((g) => o.hashes[g] !== undefined && o.hashes[g] !== hashes[g]));
+      const newTomorrow = hasTomorrow && o.tomorrowSeen !== today;
+      if (hasTomorrow) o.tomorrowSeen = today;
       if (hour >= config.outageHour && o.morningDay !== today) {
         o.morningDay = today;
         baseline();
         save();
         await send(buildSummary(data, people, { title: '☀️ Доброго ранку! Світло по всіх чергах', now }));
+      } else if (changed.size) {
+        // новый график (или правка): сразу в чат, с отметкой подписчиков изменившихся очередей
+        baseline();
+        if (hasTomorrow) o.eveningDay = today; // это сообщение уже содержит и завтра
+        save();
+        const title = newTomorrow ? '🆕 Вийшов новий графік' : `🔄 Графік змінився (черги: ${[...changed].map(shortName).join(', ')})`;
+        await send(buildSummary(data, people, { title, changed, now }));
       } else if (hour >= config.outageEveningHour && o.eveningDay !== today && hasTomorrow) {
         o.eveningDay = today;
-        baseline();
         save();
         await send(buildSummary(data, people, { title: '🌙 Добрий вечір! Світло на завтра по всіх чергах', days: ['Завтра'], now }));
       } else {
-        const changed = new Set(all.filter((g) => o.hashes[g] !== undefined && o.hashes[g] !== hashes[g]));
         baseline();
-        if (changed.size) {
-          save();
-          await send(buildSummary(data, people, { title: `🔄 Графік змінився (черги: ${[...changed].map(shortName).join(', ')})`, changed, now }));
-        } else save();
+        save();
       }
     } catch (e) {
       console.error('[outage]', chatId, e.message);

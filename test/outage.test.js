@@ -10,8 +10,8 @@ process.env.QUIET_FROM = '0';
 process.env.QUIET_TO = '6';
 process.env.BOT_TZ = 'UTC';
 
-const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, offIntervals, outageAll, setUserGroup, parseMyQueue, _resetOutageCache } = await import('../src/outage.js');
-const { chat } = await import('../src/store.js');
+const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, offIntervals, outageAll, ANNOUNCE, setUserGroup, parseMyQueue, _resetOutageCache } = await import('../src/outage.js');
+const { chat, dayKey } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 const { selfTalk, setSelfTalk } = await import('../src/owner.js');
 
@@ -65,6 +65,7 @@ test('запоминает очередь человека, утром пише�
   assert.match(sent[0][2], /3\.1 — Влад/);
   assert.match(sent[0][2], /⛔ 04:00–06:00 {2}\(2 год\)/);
   setUserGroup(st, olya, 'GPV4.2', data);
+  st.outage.announced = true;
   assert.equal(parseMyQueue('у меня очередь 4.2'), 'GPV4.2');
   assert.equal(parseMyQueue('просто текст'), null);
 
@@ -93,9 +94,8 @@ test('запоминает очередь человека, утром пише�
   sent.length = 0;
   await outageTick(Date.UTC(2026, 10, 9, 20, 30), fakeFetch);
   assert.equal(sent.length, 1);
-  assert.match(sent[0][2], /Добрий вечір/);
+  assert.match(sent[0][2], /🆕 Вийшов новий графік/); // завтрашний график только что вышел — приходит сразу, не ждёт вечера
   assert.match(sent[0][2], /Завтра · 10\.11/);
-  assert.doesNotMatch(sent[0][2], /Сьогодні/);
 
   // ночью не будим
   data = { fact: { data: { [Date.UTC(2026, 10, 10) / 1000]: { 'GPV3.1': { 1: 'no' } } } } };
@@ -127,4 +127,55 @@ test('/графики — сводка по всем очередям, реги�
   assert.match(sent[0], /Світло по всіх чергах/);
   assert.match(sent[0], /🔴 1\.1\n⛔ 00:00–01:00/);
   assert.match(sent[0], /🟢 2\.1\n✅ без відключень/);
+});
+
+test('один раз зовёт подписаться; новый график на завтра приходит сразу с отметками', async () => {
+  _resetOutageCache();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t, o) => (sent.push([t, o?.entities, id]), { message_id: sent.length }) };
+  app.id = 1;
+  const st = chat(-888);
+  const mine = () => sent.filter((x) => x[2] === -888);
+  const vlad = { id: 10, first_name: 'Влад' };
+  const today = { 'GPV3.1': { 5: 'no' }, 'GPV4.2': { 1: 'yes' } };
+  const T = Date.UTC(2026, 10, 9) / 1000;
+  data = { fact: { data: { [T]: today } } };
+  setUserGroup(st, vlad, 'GPV3.1', data); // st.outage есть, об анонсе ещё не писали
+  st.outage.morningDay = dayKey(Date.UTC(2026, 10, 9, 12)); // утренняя сводка за сегодня уже была
+  const t0 = Date.UTC(2026, 10, 9, 12, 0);
+  await outageTick(t0, fakeFetch);
+  assert.equal(mine().length, 1);
+  assert.equal(mine()[0][0], ANNOUNCE);
+  await outageTick(t0 + 4 * 60_000, fakeFetch);
+  assert.equal(mine().length, 1); // повторно не зовёт и без изменений молчит
+
+  data = { fact: { data: { [T]: today, [T + 86400]: { 'GPV3.1': { 4: 'no' }, 'GPV4.2': { 1: 'yes' } } } } };
+  _resetOutageCache();
+  await outageTick(t0 + 8 * 60_000, fakeFetch);
+  assert.equal(mine().length, 2);
+  assert.match(mine()[1][0], /🆕 Вийшов новий графік/);
+  assert.match(mine()[1][0], /Завтра · 10\.11/);
+  assert.ok(mine()[1][1].some((e) => e.type === 'text_mention' && e.user.id === 10)); // Влад отмечен
+  await outageTick(t0 + 12 * 60_000, fakeFetch);
+  assert.equal(mine().length, 2);
+  await outageTick(Date.UTC(2026, 10, 9, 20, 30), fakeFetch); // вечер: сводка на завтра уже была в «новом графике»
+  assert.equal(mine().length, 2);
+});
+
+test('вечерняя сводка, если завтрашний график вышел раньше и ничего не менялось', async () => {
+  _resetOutageCache();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t, o) => (sent.push([t, o?.entities, id]), { message_id: sent.length }) };
+  const st = chat(-889);
+  const T = Date.UTC(2026, 10, 9) / 1000;
+  data = { fact: { data: { [T]: { 'GPV3.1': { 5: 'no' } }, [T + 86400]: { 'GPV3.1': { 4: 'no' } } } } };
+  setUserGroup(st, { id: 12, first_name: 'Саша' }, 'GPV3.1', data);
+  st.outage.announced = true;
+  st.outage.morningDay = dayKey(Date.UTC(2026, 10, 9, 12));
+  const mine = () => sent.filter((x) => x[2] === -889);
+  await outageTick(Date.UTC(2026, 10, 9, 12, 0), fakeFetch); // базовая линия, тихо
+  assert.equal(mine().length, 0);
+  await outageTick(Date.UTC(2026, 10, 9, 20, 30), fakeFetch);
+  assert.equal(mine().length, 1);
+  assert.match(mine()[0][0], /Добрий вечір/);
 });
