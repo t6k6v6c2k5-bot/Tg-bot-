@@ -211,6 +211,19 @@ export const parseMyQueue = (text) => {
   return m ? parseGroup(m[1]) : null;
 };
 
+/** /графики — сводка по всем очередям прямо сейчас */
+export async function outageAll(chatId, st, replyTo, fetchFn = fetch) {
+  let data;
+  try {
+    data = await loadData(fetchFn);
+  } catch (e) {
+    console.warn('[outage]', e.message);
+    return void (await say(chatId, st, 'Не дотягуюсь до графіків, спробуй трохи пізніше.', replyTo));
+  }
+  const m = buildSummary(data, peopleByGroup(sub(st)), { title: `Світло по всіх чергах${updated(data) ? ` (оновлено ${updated(data)})` : ''}:` });
+  await say(chatId, st, m.text, replyTo);
+}
+
 /** /свет 3.1 — запомнить мою очередь и показать график; /свет — мой график; /свет стоп — забыть; /свет картинка — картинкой */
 export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = fetch) {
   const o = sub(st);

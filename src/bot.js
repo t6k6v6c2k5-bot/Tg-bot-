@@ -27,7 +27,9 @@ export async function createBot() {
 
     // Команды (кириллические тоже: Telegram их не размечает, поэтому разбираем сами)
     if (botOff()) return; // выключен: молчим, команды тоже
-    const cmd = parseCommand(text);
+    // «Свет» / «Графики» словом без слэша (в любом регистре) тоже работают как команда
+    const plain = text.trim().match(/^(свет|світло|графики|графіки|график|графік)[\s!.?]*$/iu);
+    const cmd = parseCommand(text) || (plain ? { name: plain[1].toLowerCase(), args: '' } : null);
     if (cmd && (await handleCommand(ctx, cmd, msg))) return;
 
     remember(st, {

@@ -10,7 +10,7 @@ process.env.QUIET_FROM = '0';
 process.env.QUIET_TO = '6';
 process.env.BOT_TZ = 'UTC';
 
-const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, offIntervals, setUserGroup, parseMyQueue, _resetOutageCache } = await import('../src/outage.js');
+const { parseGroup, listGroups, groupHash, outageCommand, outageTick, imageUrl, offIntervals, outageAll, setUserGroup, parseMyQueue, _resetOutageCache } = await import('../src/outage.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 const { selfTalk, setSelfTalk } = await import('../src/owner.js');
@@ -112,4 +112,18 @@ test('сам в чат не пишет по умолчанию', () => {
   setSelfTalk(true);
   assert.equal(selfTalk(), true);
   setSelfTalk(false);
+});
+
+test('/графики — сводка по всем очередям, регистр команд не важен', async () => {
+  const { parseCommand } = await import('../src/commands.js');
+  assert.equal(parseCommand('/Графики').name, 'графики');
+  assert.equal(parseCommand('/Свет 3.1').name, 'свет');
+  _resetOutageCache();
+  data = { fact: { update: 'z', data: { [Math.floor(Date.now() / 1000 / 86400) * 86400]: { 'GPV1.1': { 1: 'no' }, 'GPV2.1': { 2: 'yes' } } } } };
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t) => (sent.push(t), { message_id: 1 }) };
+  await outageAll(-777, chat(-777), 5, fakeFetch);
+  assert.match(sent[0], /Світло по всіх чергах/);
+  assert.match(sent[0], /• 1\.1: 00:00–01:00/);
+  assert.match(sent[0], /• 2\.1: без відключень/);
 });

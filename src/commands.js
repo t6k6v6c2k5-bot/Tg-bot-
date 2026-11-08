@@ -11,7 +11,7 @@ import { lifeStatus } from './life.js';
 import { CRUDE_LEVELS, crudeLevel } from './prompts.js';
 import { dossier, statsText, detectTargets } from './analysis.js';
 import { runCatchup, hoursFromText } from './catchup.js';
-import { outageCommand } from './outage.js';
+import { outageCommand, outageAll } from './outage.js';
 
 export const parseCommand = (text) => {
   const m = text.match(/^\/([\p{L}0-9_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/u);
@@ -34,7 +34,7 @@ const ALIAS = {
   разбор: 'analyze', analyze: 'analyze', статистика: 'stats', стата: 'stats', stats: 'stats',
   чтопомнишь: 'memory', memory: 'memory',
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
-  свет: 'outage', світло: 'outage', график: 'outage', графік: 'outage', light: 'outage', outage: 'outage',
+  свет: 'outage', світло: 'outage', график: 'outage', графік: 'outage', графики: 'graphs', графіки: 'graphs', graphs: 'graphs', light: 'outage', outage: 'outage',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
 };
 
@@ -55,6 +55,7 @@ export const BOT_COMMANDS = [
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
   { command: 'light', description: 'Свет: /свет 3.1 запомнит твою очередь' },
+  { command: 'graphs', description: 'Графики света по всем очередям' },
   { command: 'forget', description: 'Забыть меня и не запоминать' },
 ];
 
@@ -76,7 +77,7 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата
-/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь`;
+/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/графики — график света по всем очередям сейчас (можно и словом «Графики» без слэша)`;
 
 // true — сообщение было командой (нашей или чужой), дальше его разбирать не нужно
 export async function handleCommand(ctx, cmd, message) {
@@ -95,6 +96,9 @@ async function exec(ctx, key, cmd, message) {
   const now = Date.now();
 
   switch (key) {
+    case 'graphs':
+      await outageAll(chatId, st, message.message_id);
+      break;
     case 'outage':
       await outageCommand(chatId, st, cmd.args, message.message_id, from);
       break;
