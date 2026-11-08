@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { save, touchUser, hourOf } from './store.js';
 import { decide, isDirect, cheapReaction, closerKind } from './filter.js';
-import { app, respond, react } from './respond.js';
+import { app, respond, react, say } from './respond.js';
 import { watchQuestion } from './scheduler.js';
 import { learn, quickFacts } from './memory.js';
 import { recordFeedback, isCriticism, isLeaveMeAlone } from './taste.js';
@@ -10,6 +10,7 @@ import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
+import { isTimeQuestion, timeAnswer } from './clock.js';
 import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-ask.js';
 
 /**
@@ -87,6 +88,11 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   if (mode === 'direct' && replyToBot && isCriticism(detect)) mode = 'critic';
   console.log(`[msg] chat=${chatId} (${ctx.chat.type}) direct=${direct} mode=${mode} muted=${st.settings.mutedUntil > now}`);
   if (mode) {
+    // «который час»: отвечаем кодом по времени бота (Киев), а не угадываем моделью
+    if (mode === 'direct' && isTimeQuestion(detect)) {
+      await respondTime(chatId, st, isPrivate ? undefined : msg.message_id);
+      return;
+    }
     // вопросы про свет обычными словами: считаем по графику очередей, а не шутим
     if (mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now))) {
       await handleLightQuestion({ chatId, st, from: msg.from, text: detect, replyTo: isPrivate ? undefined : msg.message_id });
@@ -115,4 +121,8 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   if (selfTalk() && !isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
+}
+
+async function respondTime(chatId, st, replyTo) {
+  await say(chatId, st, timeAnswer(), replyTo);
 }

@@ -65,7 +65,7 @@ export const config = {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
-  tz: env.BOT_TZ || 'Europe/Moscow',
+  tz: env.BOT_TZ || 'Europe/Kyiv', // бот украинский: время по Киеву
   digestHour: num('DIGEST_HOUR', 22),
   digestMinMessages: num('DIGEST_MIN_MESSAGES', 20),
   dataDir: env.DATA_DIR || './data',
