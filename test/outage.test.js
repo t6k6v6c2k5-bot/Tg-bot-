@@ -116,7 +116,7 @@ test('сам в чат не пишет по умолчанию', () => {
 
 test('/графики — сводка по всем очередям, регистр команд не важен', async () => {
   const { parseCommand } = await import('../src/commands.js');
-  assert.equal(parseCommand('/Графики').name, 'графики');
+  assert.equal(parseCommand('/График').name, 'график');
   assert.equal(parseCommand('/Свет 3.1').name, 'свет');
   _resetOutageCache();
   data = { fact: { update: 'z', data: { [Math.floor(Date.now() / 1000 / 86400) * 86400]: { 'GPV1.1': { 1: 'no' }, 'GPV2.1': { 2: 'yes' } } } } };
