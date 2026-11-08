@@ -113,6 +113,44 @@ export function daysOf(data, now = Date.now()) {
   return out;
 }
 
+/** Временная шкала очереди на 2 суток: минуты от сегодняшней полуночи → {off, maybe, known} */
+export function timeline(data, g, now = Date.now()) {
+  const off = [];
+  const maybe = [];
+  const knownDays = new Set();
+  for (const d of daysOf(data, now)) {
+    if (!d.groups?.[g]) continue;
+    const base = d.label === 'Завтра' ? 1440 : 0;
+    knownDays.add(base);
+    const iv = offIntervals(d.groups[g]);
+    for (const [a, b] of iv.off) off.push([a + base, b + base]);
+    for (const [a, b] of iv.maybe) maybe.push([a + base, b + base]);
+  }
+  return { off, maybe, knownDays };
+}
+
+/** Что с светом сейчас и когда ближайшее изменение */
+export function statusNow(data, g, now = Date.now()) {
+  const tl = timeline(data, g, now);
+  const n = minutesNow(now);
+  const cur = tl.off.find(([a, b]) => n >= a && n < b);
+  if (cur) return { on: false, until: cur[1] };
+  const next = tl.off.filter(([a]) => a > n).sort((x, y) => x[0] - y[0])[0];
+  return { on: true, until: next ? next[0] : null };
+}
+
+const hrsText = (min) => `${String(Math.round(min / 6) / 10).replace('.', ',')} год`;
+
+/** «🟢 Зараз світло є, наступне відключення о 17:30 (через 3 год)» для личного графика */
+export function statusLine(data, g, now = Date.now()) {
+  if (!daysOf(data, now).some((d) => d.groups?.[g])) return '';
+  const s = statusNow(data, g, now);
+  const n = minutesNow(now);
+  const t = (m) => (m < 1440 ? hhmm(m) : `${hhmm(m - 1440)} (завтра)`);
+  if (!s.on) return `🔴 Зараз світла немає, увімкнуть о ${t(s.until)} (через ${hrsText(s.until - n)})`;
+  return s.until != null ? `🟢 Зараз світло є, наступне відключення о ${t(s.until)} (через ${hrsText(s.until - n)})` : '🟢 Зараз світло є, далі відключень у графіку немає';
+}
+
 const hoursOff = (iv) => {
   const h = Math.round(iv.reduce((n, [x, y]) => n + (y - x), 0) / 6) / 10;
   return `${String(h).replace('.', ',')} год`;
@@ -125,7 +163,7 @@ const hoursOff = (iv) => {
  * only — показать только эти очереди (личный /свет).
  * @returns {{text:string, entities:object[]}}
  */
-export function buildSummary(data, people, { title, subtitle = '', days = ['Сьогодні', 'Завтра'], changed = new Set(), only = null, now = Date.now() } = {}) {
+export function buildSummary(data, people, { title, subtitle = '', days = ['Сьогодні', 'Завтра'], changed = new Set(), only = null, markPast = false, now = Date.now() } = {}) {
   let text = '';
   const entities = [];
   const add = (str, type) => {
@@ -169,7 +207,16 @@ export function buildSummary(data, people, { title, subtitle = '', days = ['Сь
         });
       }
       text += '\n';
-      if (iv.off.length) text += `⛔ ${fmt(iv.off).replaceAll(', ', ' · ')}  (${hoursOff(iv.off)})`;
+      if (iv.off.length) {
+        text += '⛔ ';
+        const n = minutesNow(now);
+        iv.off.forEach(([x, y], i) => {
+          if (i) text += ' · ';
+          const past = markPast && d.label === 'Сьогодні' && y <= n; // уже прошёл — зачёркиваем
+          add(`${hhmm(x)}–${hhmm(y)}`, past ? 'strikethrough' : null);
+        });
+        text += `  (${hoursOff(iv.off)})`;
+      }
       else text += '✅ без відключень';
       if (iv.maybe.length) text += `\n❓ можливо ${fmt(iv.maybe).replaceAll(', ', ' · ')}`;
     }
@@ -263,8 +310,9 @@ export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = f
   }
   const msg = buildSummary(data, { [g]: [{ uid: from.id, name: from.first_name || from.username || 'друг', username: from.username }] }, {
     title: `💡 Черга ${shortName(g)}`,
-    subtitle: mine === g || !parseGroup(text) ? '' : "Запам'ятав твою чергу: кидатиму вранці, ввечері і коли графік зміниться.",
+    subtitle: [statusLine(data, g), mine === g || !parseGroup(text) ? '' : "Запам'ятав твою чергу: кидатиму вранці, ввечері і коли графік зміниться."].filter(Boolean).join('\n'),
     only: [g],
+    markPast: true,
   });
   await reply(msg.text, { entities: msg.entities });
 }

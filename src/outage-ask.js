@@ -1,7 +1,9 @@
 import { config } from './config.js';
 import { generate } from './ai.js';
 import { say } from './respond.js';
-import { loadData, listGroups, parseGroup, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow } from './outage.js';
+import { loadData, listGroups, parseGroup, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow, timeline, statusNow } from './outage.js';
+
+export { timeline, statusNow };
 
 // Вопросы про свет обычными словами: «Батя, мне надо зарядить машину у Игоря, у него 6.2, поставлю в 10 вечера, заберу в 7 утра».
 // Время и очередь вытаскивает ИИ (или запасной разбор по правилам), а считает код: на арифметике интервалов модели ошибаются.
@@ -42,22 +44,6 @@ export function looseTimes(text) {
 }
 
 // ---------- расчёты (чистые функции) ----------
-/** Временная шкала очереди на 2 суток: минуты от сегодняшней полуночи → {off, maybe, known} */
-export function timeline(data, g, now = Date.now()) {
-  const off = [];
-  const maybe = [];
-  const knownDays = new Set();
-  for (const d of daysOf(data, now)) {
-    if (!d.groups?.[g]) continue;
-    const base = d.label === 'Завтра' ? 1440 : 0;
-    knownDays.add(base);
-    const iv = offIntervals(d.groups[g]);
-    for (const [a, b] of iv.off) off.push([a + base, b + base]);
-    for (const [a, b] of iv.maybe) maybe.push([a + base, b + base]);
-  }
-  return { off, maybe, knownDays };
-}
-
 const overlap = (iv, S, E) => iv.map(([a, b]) => [Math.max(a, S), Math.min(b, E)]).filter(([a, b]) => b > a);
 const sum = (iv) => iv.reduce((n, [a, b]) => n + (b - a), 0);
 const mergeIv = (iv) => {
@@ -87,16 +73,6 @@ export function analyzeWindow(data, g, S, E, now = Date.now()) {
   if (cur < E) on.push([cur, E]);
   const longest = on.reduce((best, iv) => (iv[1] - iv[0] > best[1] - best[0] ? iv : best), [0, 0]);
   return { total: E - S, on, off: offIn, maybe: maybeIn, unknown: unkIn, onMin: sum(on), offMin: sum(offIn), maybeMin: sum(maybeIn), unknownMin: sum(unkIn), longest };
-}
-
-/** Что с светом сейчас и когда ближайшее изменение */
-export function statusNow(data, g, now = Date.now()) {
-  const tl = timeline(data, g, now);
-  const n = minutesNow(now);
-  const cur = tl.off.find(([a, b]) => n >= a && n < b);
-  if (cur) return { on: false, until: cur[1] };
-  const next = tl.off.filter(([a]) => a > n).sort((x, y) => x[0] - y[0])[0];
-  return { on: true, until: next ? next[0] : null };
 }
 
 // ---------- текст ----------

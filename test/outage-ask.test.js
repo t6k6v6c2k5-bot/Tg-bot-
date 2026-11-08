@@ -9,7 +9,7 @@ process.env.BOT_TZ = 'UTC';
 process.env.OUTAGE_TZ = 'UTC';
 
 const { isLightQuestion, isQueueFollowUp, looseTimes, analyzeWindow, handleLightQuestion, statusNow } = await import('../src/outage-ask.js');
-const { _resetOutageCache, setUserGroup } = await import('../src/outage.js');
+const { _resetOutageCache, setUserGroup, statusLine, buildSummary } = await import('../src/outage.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 
@@ -106,4 +106,14 @@ test('ответ номером на «какая очередь?» и несу�
   out = await ask('1.1', async () => ({ intent: 'schedule', queue: '1.1' }), st);
   assert.match(out, /Черга 1\.1/);
   assert.equal(st.outage.asked[5], undefined);
+});
+
+test('личный график: строка «зараз» и зачёркнутые прошедшие интервалы', () => {
+  const t = Date.UTC(2026, 10, 9, 15, 0); // 15:00: 07:00–14:00 уже прошло, дальше 17:30
+  assert.equal(statusLine(mkData(), 'GPV6.2', t), '🟢 Зараз світло є, наступне відключення о 17:30 (через 2,5 год)');
+  assert.match(statusLine(mkData(), 'GPV6.2', NOW), /🔴 Зараз світла немає, увімкнуть о 14:00 \(через 5,3 год\)/);
+  const m = buildSummary(mkData(), {}, { title: 't', only: ['GPV6.2'], markPast: true, days: ['Сьогодні'], now: t });
+  const strike = m.entities.filter((e) => e.type === 'strikethrough');
+  assert.equal(strike.length, 1);
+  assert.equal(m.text.slice(strike[0].offset, strike[0].offset + strike[0].length), '07:00–14:00');
 });
