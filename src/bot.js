@@ -7,6 +7,7 @@ import { ingestNonText, onChatMember } from './roster.js';
 import { processMessage } from './pipeline.js';
 import { onAdminMessage, onAction } from './admin.js';
 import { botOff } from './owner.js';
+import { botMode } from './botmode.js';
 
 export async function createBot() {
   const bot = new Telegraf(config.botToken);
@@ -29,7 +30,7 @@ export async function createBot() {
     if (botOff()) return; // выключен: молчим, команды тоже
     // «Свет» / «Графики» словом без слэша (в любом регистре) тоже работают как команда
     const plain = text.trim().match(/^(свет|світло|графики|графіки|график|графік)[\s!.?]*$/iu);
-    const cmd = parseCommand(text) || (plain ? { name: plain[1].toLowerCase(), args: '' } : null);
+    const cmd = parseCommand(text) || (plain && botMode(st) !== 'nolight' ? { name: plain[1].toLowerCase(), args: '' } : null);
     if (cmd && (await handleCommand(ctx, cmd, msg))) return;
 
     // имя сменили с прошлого сообщения? (Telegram не присылает событие смены имени, видим только по новому сообщению)

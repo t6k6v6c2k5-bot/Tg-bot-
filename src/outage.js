@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { allChats, save } from './store.js';
 import { app, say } from './respond.js';
 import { botOff } from './owner.js';
+import { botMode } from './botmode.js';
 
 // Графики отключений света из https://github.com/Baskerville42/outage-data-ua
 // data/<регион>.json — данные по очередям (GPV3.1 …), images/<регион>/gpv-3-1.png — готовая картинка.
@@ -278,7 +279,7 @@ export const ANNOUNCE = 'Кто хочет получать уведомлени
  */
 export async function outageTick(now = Date.now(), fetchFn = fetch) {
   if (botOff() || !app.telegram) return;
-  const chats = allChats().filter(([id, st]) => id < 0 && st.outage && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
+  const chats = allChats().filter(([id, st]) => id < 0 && st.outage && botMode(st) !== 'nolight' && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
   if (!chats.length || now - lastPoll < POLL_MS) return;
   lastPoll = now;
   const data = await loadData(fetchFn, now);

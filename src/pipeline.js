@@ -10,6 +10,7 @@ import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
 import { renameNote } from './rename.js';
+import { botMode } from './botmode.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
 import { isTimeQuestion, timeAnswer } from './clock.js';
 import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-ask.js';
@@ -45,7 +46,8 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
     if (quickFacts(st, msg.from.id, text, now)) console.log('[memory] факт записан правилом');
   }
   // «моя очередь 3.1»: запоминаем очередь света человека, дальше кидаем ему график
-  const myQueue = parseMyQueue(detect);
+  const bm = botMode(st);
+  const myQueue = bm === 'nolight' ? null : parseMyQueue(detect);
   if (myQueue) {
     const d = await loadData().catch(() => null);
     setUserGroup(st, msg.from, myQueue, d);
@@ -58,7 +60,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   const direct = isPrivate || isDirect({ text: detect, botUsername: app.username, aliases: config.aliases, replyToBot });
 
   // Обучение «блокнота» через ИИ: каждые ~12 сообщений, повтор через 5 минут, если модели были недоступны
-  if (!isPrivate) {
+  if (!isPrivate && bm !== 'light') {
     st.sinceLearn++;
     if (st.sinceLearn >= 12 && now - st.lastLearnAt > 5 * 60_000) {
       st.lastLearnAt = now;
@@ -69,7 +71,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   let mode = decide({ direct, text, st, now });
   if (!selfTalk() && !direct) mode = null; // сам не пишет: только когда позвали
   // дерзость со сменой имени: отвечаем сами, даже в режиме «молчун»
-  const note = !isPrivate && !mode && !record ? renameNote(st, msg.from.id, nameChange, now) : null;
+  const note = bm === 'mixed' && !isPrivate && !mode && !record ? renameNote(st, msg.from.id, nameChange, now) : null;
   if (note) {
     mode = 'direct';
     console.log(`[rename] ${nameChange.from} → ${nameChange.to}: отвечаю на дерзость`);
@@ -101,7 +103,12 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
       return;
     }
     // вопросы про свет обычными словами: считаем по графику очередей, а не шутим
-    if (mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now))) {
+    // режим «только свет»: на всё, кроме графиков и времени, молчим
+    if (bm === 'light' && !(mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now) || isTimeQuestion(detect)))) {
+      console.log('[mode] только свет: не про свет, молчу');
+      return;
+    }
+    if (bm !== 'nolight' && mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now))) {
       await handleLightQuestion({ chatId, st, from: msg.from, text: detect, replyTo: isPrivate ? undefined : msg.message_id });
       return;
     }
@@ -120,14 +127,14 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   }
 
   // Дешёвая реакция без ИИ
-  const emoji = selfTalk() ? cheapReaction({ text, st, now }) : null;
+  const emoji = selfTalk() && bm === 'mixed' ? cheapReaction({ text, st, now }) : null;
   if (emoji && (await react(chatId, msg.message_id, emoji))) {
     st.lastReactAt = now;
     save();
     return;
   }
 
-  if (selfTalk() && !isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
+  if (selfTalk() && bm === 'mixed' && !isPrivate && text.trim().endsWith('?')) watchQuestion(chatId, st, msg.message_id);
 }
 
 async function respondTime(chatId, st, replyTo) {
