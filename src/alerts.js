@@ -190,7 +190,7 @@ export async function alertStatusText(fetchFn = fetch, now = Date.now()) {
   } catch (e) {
     console.warn('[alerts] статус:', e.message);
   }
-  return `${head}${tail}\n\nДані з відкритих джерел (alerts API, канал Повітряних Сил), це не офіційне оповіщення.`;
+  return `${head}${tail}`;
 }
 
 export const isAlertQuestion = (text) => {
