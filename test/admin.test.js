@@ -99,7 +99,11 @@ test('меню: главная, список (только группы, све�
   assert.match(text, /AutoHelp \| Спілкування/);
   assert.match(text, /знаю 2 из ~303/);
   assert.match(text, /✅ ок/);
-  const data = cardKeyboard(info).inline_keyboard.flat().map((b) => b.callback_data);
+  const allBtns = cardKeyboard(info).inline_keyboard.flat();
+  const data = allBtns.map((b) => b.callback_data).filter(Boolean);
+  assert.match(text, /🔗 https:\/\/t\.me\/c\/\d+\/1/); // ссылка на чат кликабельна
+  assert.ok(allBtns.some((b) => b.url?.startsWith('https://t.me/'))); // и кнопка «Открыть чат»
+  assert.ok(rows.some((r) => r[1]?.url?.startsWith('https://t.me/'))); // в списке чатов рядом с каждым — 🔗
   for (const c of ['rv', 'nd', 'pk', 'tl', 'dg', 'st', 'mu', 'ac', 'tn', 'cr', 'lf', 'sy', 'lv']) assert.ok(data.some((d) => d.startsWith(`a:${c}:${CHAT}`)), c);
   assert.ok(data.every((d) => d.length <= 64)); // лимит Telegram на callback_data
 });

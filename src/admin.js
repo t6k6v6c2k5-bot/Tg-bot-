@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { botMode, setBotMode, MODES, NEXT, alertsOn } from './botmode.js';
 import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, botOff, setBotOff, selfTalk, setSelfTalk, _resetOwner } from './owner.js';
-import { allChats, chat, save, dayKey } from './store.js';
+import { allChats, chat, save, dayKey, chatLink } from './store.js';
 import { app, say } from './respond.js';
 import { runInitiative, pickNeedleTarget, pickPokeTarget, dailyCap, engagement } from './life.js';
 import { sendDigest } from './commands.js';
@@ -52,6 +52,7 @@ export function chatInfo(id, st, now = Date.now()) {
   return {
     id,
     title: st.title || `Чат ${id}`,
+    link: chatLink(id, st),
     known: members(st).length,
     total: st.memberCount ? st.memberCount - 1 : null,
     last,
@@ -76,7 +77,7 @@ export function chatInfo(id, st, now = Date.now()) {
 export function cardText(i, note = '') {
   return [
     `💬 ${i.title}`,
-    `ID: ${i.id}`,
+    `ID: ${i.id}${i.link ? `\n🔗 ${i.link}` : ''}`,
     `Участники: знаю ${i.known}${i.total ? ` из ~${i.total}` : ''}. Писали за сутки: ${i.msgs24} сообщ. Последнее: ${i.last ? ago(i.now - i.last) : 'нет'}.`,
     `Активность ${i.activity}/5 · тон: ${TONES[i.tone] || i.tone} · пошлость ${i.crude} · своя жизнь: ${i.life ? 'вкл' : 'выкл'}${i.mutedMin ? ` · 🤫 молчу ещё ${i.mutedMin} мин` : ''}`,
     `Режим: ${MODES[i.mode]}${i.hardcore ? ' · ☠️ ХАРДКОР' : ''}`,
@@ -94,6 +95,7 @@ export function cardKeyboard(i) {
   const c = (cmd, arg) => `a:${cmd}:${i.id}${arg != null ? ':' + arg : ''}`;
   return {
     inline_keyboard: [
+      ...(i.link ? [[{ text: '🔗 Открыть чат', url: i.link }]] : []),
       [btn('🔥 Оживить', c('rv')), btn('😈 Подколоть с тегом', c('nd'))],
       [btn('👋 Позвать молчуна', c('pk')), btn('📖 Байка', c('tl'))],
       [btn('📰 Итоги дня', c('dg')), btn('📊 Статистика', c('st'))],
@@ -124,7 +126,10 @@ export function listMenu(now = Date.now()) {
     .sort((a, b) => b.last - a.last)
     .slice(0, 20);
   if (!g.length) return { text: '📋 Чатов пока нет: бот ещё не видел ни одной группы.', kb: { inline_keyboard: [[btn('⬅️ Назад', 'a:m')]] } };
-  const rows = g.map(({ id, st, last }) => [btn(`${(st.title || `Чат ${id}`).slice(0, 30)} · ${last ? ago(now - last) : '—'}`, `a:c:${id}`)]);
+  const rows = g.map(({ id, st, last }) => {
+    const link = chatLink(id, st);
+    return [btn(`${(st.title || `Чат ${id}`).slice(0, 30)} · ${last ? ago(now - last) : '—'}`, `a:c:${id}`), ...(link ? [{ text: '🔗', url: link }] : [])];
+  });
   rows.push([btn('⬅️ Назад', 'a:m')]);
   return { text: `📋 Чаты, где есть бот (${groups().length}). Нажми, чтобы управлять:`, kb: { inline_keyboard: rows } };
 }
@@ -152,6 +157,7 @@ export async function fillTitles() {
     try {
       const c = await app.telegram.getChat(id);
       if (c?.title) st.title = c.title;
+      if (c?.username) st.username = c.username;
       st.chatType ||= c?.type;
     } catch {
       /* бота могли удалить из чата — оставляем «Чат id» */

@@ -72,7 +72,15 @@ export function chat(id) {
 export function touchChat(st, c) {
   if (!c) return;
   if (c.title) st.title = c.title;
+  if (c.username) st.username = c.username; // публичная группа: ссылка t.me/<username>
   st.chatType = c.type;
+}
+
+/** Ссылка на чат: публичный ник или t.me/c/<id> (открывается у участников чата); для обычных групп без ссылки — null */
+export function chatLink(id, st) {
+  if (st?.username) return `https://t.me/${st.username}`;
+  const s = String(id);
+  return s.startsWith('-100') ? `https://t.me/c/${s.slice(4)}/1` : null;
 }
 
 export const allChats = () => [...chats.entries()];
