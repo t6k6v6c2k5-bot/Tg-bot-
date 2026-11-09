@@ -87,12 +87,12 @@ export const config = {
   alertAreaLabel: env.ALERT_AREA_LABEL || 'Кривому Розі', // как писать в сообщениях («у Кривому Розі»)
   alertAreaChannels: (env.ALERT_AREA_CHANNELS || 'oborona_kr').split(/[\s,;]+/).filter(Boolean),
   alertRegion: env.ALERT_REGION || 'Дніпропетровська область',
-  alertChannels: (env.ALERT_CHANNELS || 'kpszsu,dnipro_alerts,oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean),
+  alertChannels: (env.ALERT_CHANNELS || 'kpszsu,dnipro_alerts,oborona_kr,IMS_KR_TM,typical_KR').split(/[\s,;]+/).filter(Boolean),
   alertKeywords: (env.ALERT_KEYWORDS || '').split(/\s*,\s*/).filter(Boolean), // дополнительные слова (по умолчанию нет): бот пишет только про ваш город (ALERT_PRIORITY)
   // местные каналы Кривого Рога: «терміново в укриття», «коридор», «ховайтесь» там значит, что угроза над городом, даже без названия города
-  alertLocal: (env.ALERT_LOCAL_CHANNELS || 'oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean).map((s) => s.toLowerCase()),
+  alertLocal: (env.ALERT_LOCAL_CHANNELS || 'oborona_kr,IMS_KR_TM,typical_KR').split(/[\s,;]+/).filter(Boolean).map((s) => s.toLowerCase()),
   // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов
-  alertPriority: (env.ALERT_PRIORITY || 'Кривий Ріг,Кривого Рогу,Кривому Розі,Кривим Рогом,Криворіж,Кривой Рог,Кривого Рога').split(/\s*,\s*/).filter(Boolean),
+  alertPriority: (env.ALERT_PRIORITY || 'Кривий Ріг,Кривого Рогу,Кривому Розі,Кривим Рогом,Криворіж,Криворізьк,Кривой Рог,Кривого Рога').split(/\s*,\s*/).filter(Boolean),
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ
   outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
   outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра

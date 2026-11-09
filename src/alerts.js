@@ -86,7 +86,7 @@ const decode = (s) =>
     .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, n) => entities[n]);
 
 // Подписи каналов («Alerts Live • Зворотний зв'язок», «✉️chatbot|💬…», реклама) в чат не нужны
-const SIGNATURE = /alerts\s*live|зворотн\p{L}*\s+зв.?язок|chatbot|treads|підписа\p{L}*|подписа\p{L}*|✉️|реклам\p{L}*|донат\p{L}*|t\.me\/|@\w+/iu;
+const SIGNATURE = /alerts\s*live|зворотн\p{L}*\s+зв.?язок|chatbot|treads|підписа\p{L}*|подписа\p{L}*|✉️|реклам\p{L}*|донат\p{L}*|повідомити\s+(?:про|нам)|скинути\s+фото|t\.me\/|@\w+/iu;
 export const cleanPost = (text) =>
   text
     .split('\n')
@@ -133,14 +133,16 @@ const SOFT = /чисто|без\s+загроз|вийшов\s+за\s+меж|ви
 const CLEAR = new RegExp(`${END.source}|${SOFT.source}`, 'i');
 export const isUpdatePost = (text) => SOFT.test(text) && !END.test(text);
 // Призывы укрыться: в местном канале это значит, что что-то летит на город
-const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*)/iu;
-export const isUrgentPost = (text) => URGENT.test(text) && !CLEAR.test(text);
-export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text)) && !CLEAR.test(text);
+const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*|гучн\p{L}*|працю\p{L}*\s+ппо|ппо\s+працю\p{L}*)/iu;
+// «Може бути гучно» — прогноз, а не событие
+const MAYBE_LOUD = /(?:може|можуть|можливо)\s+бути\s+гучн/i;
+export const isUrgentPost = (text) => URGENT.test(text.replace(MAYBE_LOUD, '')) && !CLEAR.test(text);
+export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text.replace(MAYBE_LOUD, ''))) && !CLEAR.test(text);
 
 // Прямая угроза городу или просто движение рядом? «Транзит», «повз», «жовтий/жовтогарячий» — не повод кричать «УВАГА».
 const TRANSIT = /транзит|повз|поблизу|вздовж|залишає|не\s+загрожу|на\s+(?:захід|схід|північ|південь)\s+від|жовтогаряч|жовтий|жовта/i;
 const RED = /червон\p{L}*\s+рівен\p{L}*|червон\p{L}*\s+рівн\p{L}*|🟥|🔴/iu;
-const DIRECT = /курсом\s+на|курс\s+на|в\s+напрямку|у\s+напрямку|на\s+Кривий|на\s+Кривого|прямує\s+на|летить\s+на|летять\s+на|заходить|над\s+(?:містом|Кривим)|у\s+бік\s+(?:міста|Кривого)|ціль[:\s]/iu;
+const DIRECT = /курсом\s+на|курс\s+на|[ув]\s+бік|в\s+напрямку|у\s+напрямку|на\s+Кривий|на\s+Кривого|прямує\s+на|летить\s+на|летять\s+на|заходить|над\s+(?:містом|Кривим)|у\s+бік\s+(?:міста|Кривого)|ціль[:\s]/iu;
 const IMPACT = /вибух|приліт|влучанн|падінн/i;
 /** Срочно (УВАГА, прямая угроза городу) или обычное сообщение о движении поблизости */
 export function isDirectThreat(text) {
