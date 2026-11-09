@@ -13,12 +13,14 @@ import { alertsOn } from './botmode.js';
 const FILE = () => path.join(config.dataDir, 'alerts.json');
 const STATE_URLS = { ubilling: 'https://ubilling.net.ua/aerialalerts/', alertscom: 'https://alerts.com.ua/api/states' };
 const FRESH_MS = 20 * 60_000; // старые посты после простоя не пересылаем
-const CHANNEL_EVERY_MS = 10_000; // когда летит ракета, счёт идёт на секунды
+// Когда летит ракета, счёт идёт на секунды: канал с тревогой по району опрашиваем чаще всех, местные чуть реже, остальные раз в 10 с
+const EVERY_MS = { area: 3_000, local: 4_000, other: 10_000 };
 const HOURLY_CAP = 10; // не больше N сообщений «где летит» в час на чат
 const H = 3600_000;
 
 let S = null; // { active: bool|null (тревога в городе), since: ts, posts: {канал: последний id}, areaPost: id }
-let lastChannelAt = 0;
+const fetchedAt = {}; // канал -> когда последний раз брали страницу
+const pageCache = {}; // канал -> последние разобранные посты
 let lastNoSubLog = 0;
 
 const load = () => {
@@ -48,7 +50,8 @@ export const _resetAlerts = () => {
     /* файла ещё нет */
   }
   S = null;
-  lastChannelAt = 0;
+  for (const k of Object.keys(fetchedAt)) delete fetchedAt[k];
+  for (const k of Object.keys(pageCache)) delete pageCache[k];
   lastNoSubLog = 0;
 };
 
@@ -202,22 +205,28 @@ export function similar(a, b) {
 }
 
 const backoff = {}; // канал -> до какого времени не трогаем (после 429)
-/** Страницы всех нужных каналов параллельно: { канал: [посты] } */
-async function fetchPages(fetchFn) {
-  const pages = {};
-  const now = Date.now();
+const everyMs = (ch) => (config.alertAreaChannels.includes(ch) ? EVERY_MS.area : config.alertLocal.includes(ch.toLowerCase()) ? EVERY_MS.local : EVERY_MS.other);
+const allChannels = () => [...new Set([...config.alertChannels, ...config.alertAreaChannels])];
+
+/**
+ * Берёт страницы только тех каналов, чей срок пришёл (районный чаще всех), остальные отдаёт из кэша.
+ * @param {boolean} force  взять все сразу (для /тревога)
+ * @returns {Promise<{pages:object, fresh:boolean}>}  fresh — хоть один канал обновился
+ */
+async function fetchPages(fetchFn, now = Date.now(), force = false) {
+  const due = allChannels().filter((ch) => (force || now - (fetchedAt[ch] || 0) >= everyMs(ch)) && (backoff[ch] || 0) <= now);
   await Promise.all(
-    [...new Set([...config.alertChannels, ...config.alertAreaChannels])].map(async (ch) => {
-      if ((backoff[ch] || 0) > now) return;
+    due.map(async (ch) => {
+      fetchedAt[ch] = now;
       try {
-        pages[ch] = parseChannel(await getText(`https://t.me/s/${ch}?_=${now}`, fetchFn), ch); // ?_= обходит кэш
+        pageCache[ch] = parseChannel(await getText(`https://t.me/s/${ch}?_=${now}`, fetchFn), ch); // ?_= обходит кэш
       } catch (e) {
-        if (/HTTP 429/.test(e.message)) backoff[ch] = now + 60_000; // нас притормозили: минуту не трогаем канал
+        if (/HTTP 429/.test(e.message)) backoff[ch] = now + 30_000; // нас притормозили: полминуты не трогаем канал
         console.warn(`[alerts] канал ${ch}:`, e.message);
       }
     }),
   );
-  return pages;
+  return { pages: { ...pageCache }, fresh: due.length > 0 };
 }
 
 // ---------- рассылка ----------
@@ -480,7 +489,7 @@ function pickFlightPosts(pages, now) {
   return found.sort((a, b) => a.ts - b.ts); // кто написал раньше, тот и «первый»
 }
 
-/** Раз в ~30 секунд: смена состояния тревоги в городе и новые сообщения «где летит» */
+/** Каждые 2 секунды: берёт страницы каналов, чей срок пришёл, и разбирает смену состояния тревоги в городе и новые сообщения «где летит» */
 export async function alertsTick(now = Date.now(), fetchFn = fetch) {
   if (botOff() || !app.telegram) return;
   if (!subscribed().length) {
@@ -491,9 +500,12 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
     return;
   }
   load();
-  if (now - lastChannelAt >= CHANNEL_EVERY_MS) {
-    lastChannelAt = now;
-    const pages = await fetchPages(fetchFn);
+  {
+    const { pages, fresh } = await fetchPages(fetchFn, now);
+    if (!fresh) {
+      await housekeeping(now);
+      return;
+    }
     await processArea(pages, now);
     await ensureStatus(now, pages);
     for (const p of pickFlightPosts(pages, now)) {
@@ -528,13 +540,13 @@ export function startAlerts() {
     alertsTick()
       .catch((e) => console.error('[alerts]', e.message))
       .finally(() => (busy = false));
-  }, 5_000);
+  }, 2_000);
 }
 
 /** Карточка для /тревога и вопроса «есть тревога?»: состояние по городу + последний пост про него */
 export async function alertStatusText(fetchFn = fetch, now = Date.now()) {
   load();
-  const pages = await fetchPages(fetchFn);
+  const { pages } = await fetchPages(fetchFn, now, true);
   // состояние по городу: последний пост по району среди каналов
   const area = config.alertAreaChannels
     .flatMap((ch) => (pages[ch] || []).map((p) => ({ ...p, ev: areaEvent(p.text) })))
