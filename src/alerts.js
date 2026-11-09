@@ -97,7 +97,12 @@ const escRe = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const priorityRe = () => new RegExp(config.alertPriority.map(escRe).join('|'), 'i');
 // Подходит ли пост: про нашу область, про угрозу и это не «чисто / відбій / вийшов за межі»
 const THREAT = /бпла|безпілот|дрон|шахед|геран|мопед|ракет|реактив|балістик|крилат|кинджал|калібр|іскандер|(?<![а-яa-z])х-\d|вибух|приліт|обстріл|ппо|літак|курс|напрям|транзит|вектор|груп[аиу]|ціль|цілі|летить|летять|рух/i;
-const CLEAR = /чисто|без\s+загроз|відбій|відбо[юя]|вийшов\s+за\s+меж|вийшли\s+за\s+меж|залишив\s+(?:меж|област)|загроза\s+минула|не\s+загрожу|не\s+зафіксован/i;
+// «Відбій» — только через API (иначе дубли). А «чисто / без загроз / вийшов за межі / не зафіксовано» пишут, пока тревога ещё идёт: во время тревоги это важное обновление, без тревоги — шум.
+const END = /відбій|відбо[юя]/i;
+const SOFT = /чисто|без\s+загроз|вийшов\s+за\s+меж|вийшли\s+за\s+меж|залишив\s+(?:меж|област)|загроза\s+минула|не\s+загрожу|не\s+зафіксован/i;
+const CLEAR = new RegExp(`${END.source}|${SOFT.source}`, 'i');
+export const isUpdatePost = (text) => SOFT.test(text) && !END.test(text);
+
 // Призывы укрыться: в местном канале это значит, что что-то летит на город
 const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*)/iu;
 export const isUrgentPost = (text) => URGENT.test(text) && !CLEAR.test(text);
@@ -119,6 +124,7 @@ const keywordRe = () => new RegExp([...config.alertKeywords, ...config.alertPrio
 /** Новые посты, касающиеся нашей области: baseline при первом запуске (старое не шлём) */
 export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
   load();
+  const active = S.active === true;
   const re = keywordRe();
   const found = [];
   for (const ch of config.alertChannels) {
@@ -129,8 +135,13 @@ export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
       S.posts[ch] = Math.max(...posts.map((p) => p.id), last || 0);
       if (last == null) continue; // первый запуск: запомнили, что уже было
       for (const p of posts) {
-        if (p.id <= last || now - p.ts >= FRESH_MS || !isThreatPost(p.text)) continue;
+        if (p.id <= last || now - p.ts >= FRESH_MS) continue;
         const local = config.alertLocal.includes(ch.toLowerCase());
+        if (!isThreatPost(p.text)) {
+          // «чисто / вийшов за межі / без загроз» во время тревоги — обновление, без тревоги — пропускаем
+          if (active && isUpdatePost(p.text) && (re.test(p.text) || local)) found.push({ ...p, channel: ch, priority: false, update: true });
+          continue;
+        }
         const urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
         if (!re.test(p.text) && !urgentLocal) continue;
         found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) || urgentLocal });
@@ -263,7 +274,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
         } else if (st.alertLog.length >= 4 * HOURLY_CAP) continue; // защита от потока в массированную атаку
         st.alertSent.push({ at: now, text: p.text });
         try {
-          const sent = await say(chatId, st, p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n${p.text}\n\nДжерело: ${p.link}` : `🛩 ${p.text}\n\nДжерело: ${p.link}`);
+          const sent = await say(chatId, st, p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n${p.text}\n\nДжерело: ${p.link}` : `${p.update ? 'ℹ️' : '🛩'} ${p.text}\n\nДжерело: ${p.link}`);
           track(st, sent, 'flight');
         } catch (e) {
           console.error('[alerts]', chatId, e.message);
