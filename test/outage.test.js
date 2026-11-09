@@ -180,3 +180,25 @@ test('вечерняя сводка, если завтрашний график 
   assert.equal(mine().length, 1);
   assert.match(mine()[0][0], /Добрий вечір/);
 });
+
+test('новая сводка света заменяет старую, старая удаляется', async () => {
+  _resetOutageCache();
+  const log = [];
+  let n = 800;
+  app.telegram = { sendMessage: async (id, t) => (id === -890 && log.push(['send', n + 1, t]), { message_id: ++n }), deleteMessage: async (id, mid) => id === -890 && log.push(['del', mid]) };
+  app.id = 1;
+  const st = chat(-890);
+  const T = Date.UTC(2026, 10, 9) / 1000;
+  data = { fact: { data: { [T]: { 'GPV3.1': { 5: 'no' } } } } };
+  setUserGroup(st, { id: 12, first_name: 'Саша' }, 'GPV3.1', data);
+  st.outage.announced = true;
+  const t0 = Date.UTC(2026, 10, 9, 8, 0);
+  await outageTick(t0, fakeFetch); // утренняя сводка
+  const first = log.find((x) => x[0] === 'send')[1];
+  assert.equal(log.some((x) => x[0] === 'del'), false);
+  data = { fact: { data: { [T]: { 'GPV3.1': { 5: 'no', 6: 'no' } } } } };
+  _resetOutageCache();
+  await outageTick(t0 + 4 * 60_000, fakeFetch); // график поменялся
+  assert.ok(log.some((x) => x[0] === 'del' && x[1] === first)); // прошлая сводка убрана
+  assert.equal(log.filter((x) => x[0] === 'send').length, 2);
+});

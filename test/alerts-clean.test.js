@@ -116,3 +116,36 @@ test('нет прав админа: тревога всё равно прихо�
   assert.ok(sent.some((t) => /ТРИВОГА/.test(t)));
   assert.ok(sent.some((t) => /ВІДБІЙ/.test(t)));
 });
+
+test('устаревшие «летит» убираются по сроку жизни, закреплённый статус остаётся', async () => {
+  for (const id of [-700, -701, -702]) chat(id).settings.alerts = false; // чаты прошлых тестов не мешают
+  _resetAlerts();
+  const log = [];
+  let n = 400;
+  app.telegram = {
+    sendMessage: async (id, t) => (log.push(['send', ++n, t]), { message_id: n }),
+    pinChatMessage: async () => true,
+    unpinChatMessage: async () => true,
+    deleteMessage: async (id, mid) => log.push(['del', mid]),
+  };
+  const st = chat(-703);
+  st.settings.alerts = true;
+  const t0 = Date.now();
+  let pages = { oborona_kr: post('oborona_kr', 1, t0 - 1000, END), kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+  await alertsTick(t0, mkFetch(pages));
+  pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 1000, START), kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 2000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.') + post('kpszsu', 3, t0 + 2500, 'Реактивний вийшов за межі області, без загроз для Кривого Рогу') };
+  await alertsTick(t0 + 31_000, mkFetch(pages));
+  const sends = log.filter((x) => x[0] === 'send');
+  const status = sends.find((x) => /ПОВІТРЯНА ТРИВОГА/.test(x[2]))[1];
+  const drone = sends.find((x) => /РУХ ПОБЛИЗУ/.test(x[2]))[1];
+  const update = sends.find((x) => /ОНОВЛЕННЯ/.test(x[2]))[1];
+
+  log.length = 0;
+  await alertsTick(t0 + 16 * 60_000, mkFetch(pages)); // 16 минут: обновление «ℹ️» уже неактуально, БпЛА ещё живёт
+  assert.deepEqual(log.filter((x) => x[0] === 'del').map((x) => x[1]), [update]);
+
+  log.length = 0;
+  await alertsTick(t0 + 32 * 60_000, mkFetch(pages)); // 32 минуты: убрано и «БпЛА», хотя тревога ещё идёт
+  assert.deepEqual(log.filter((x) => x[0] === 'del').map((x) => x[1]), [drone]);
+  assert.equal(st.alertStatus.id, status); // закреплённая тревога остаётся
+});

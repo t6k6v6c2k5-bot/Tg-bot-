@@ -197,9 +197,11 @@ async function fetchPages(fetchFn) {
 const subscribed = () => allChats().filter(([id, st]) => id < 0 && alertsOn(st) && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
 const label = () => config.alertAreaLabel;
 
-const STALE_MS = 2 * H; // сообщения «летит» без тревоги и отбоя убираем через 2 часа
+// Устаревшие сообщения убираем быстро: обычное «летит» живёт 30 минут, обновление «ℹ️» 15, срочное и ракеты 60.
+// Закреплённый статус (kind 'start') без срока: его заменяет следующий статус.
+const TTL_MIN = { flight: 30, update: 15, urgent: 60 };
 
-const track = (st, sent, kind) => (st.alertMsgs ||= []).push({ id: sent.message_id, at: Date.now(), kind });
+const track = (st, sent, kind, ttlMin = 0) => (st.alertMsgs ||= []).push({ id: sent.message_id, at: Date.now(), kind, until: ttlMin ? Date.now() + ttlMin * 60_000 : 0 });
 const quiet = async (fn, what) => {
   try {
     return await fn();
@@ -315,13 +317,13 @@ async function ensureStatus(now, pages = null) {
   });
 }
 
-/** Убрать «зависшие» сообщения «летит» без тревоги (например, пост про город без сирены) */
+/** Убрать устаревшие сообщения «летит»/«обновление» по сроку жизни (не ждём отбоя) */
 async function housekeeping(now) {
   await forEachChat(async (chatId, st) => {
-    if (!S.active && (st.alertMsgs || []).some((m) => now - m.at > STALE_MS)) {
-      const ids = st.alertMsgs.map((m) => m.id);
-      st.alertMsgs = [];
-      await wipe(chatId, st, ids);
+    const dead = (st.alertMsgs || []).filter((m) => m.until && now >= m.until);
+    if (dead.length) {
+      st.alertMsgs = st.alertMsgs.filter((m) => !dead.includes(m));
+      await wipe(chatId, st, dead.map((m) => m.id));
     }
   });
 }
@@ -418,7 +420,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
         try {
           const m = flightCard(p);
           const sent = await say(chatId, st, m.text, undefined, { entities: m.entities, noPreview: true });
-          track(st, sent, 'flight');
+          track(st, sent, p.missile || p.urgent ? 'urgent' : p.update ? 'update' : 'flight', TTL_MIN[p.missile || p.urgent ? 'urgent' : p.update ? 'update' : 'flight']);
         } catch (e) {
           console.error('[alerts]', chatId, e.message);
         }

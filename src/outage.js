@@ -321,6 +321,19 @@ const isQuiet = (hour) => (config.quietFrom <= config.quietTo ? hour >= config.q
 
 export const ANNOUNCE = 'Кто хочет получать уведомления о графике света с отметкой, напишите «моя очередь 3.1» (свой номер, например 6.2) или команду /свет 3.1. Я запомню и отмечу вас сразу, как только выйдет новый график. /график покажет все очереди, /свет стоп отпишет.';
 
+/** Удалить предыдущую сводку света (устарела); нет прав или уже удалена — не страшно */
+async function dropSummary(chatId, st, o) {
+  const old = o.lastSummary;
+  if (!old) return;
+  o.lastSummary = null;
+  try {
+    await app.telegram.deleteMessage(chatId, old.id);
+  } catch (e) {
+    console.warn('[outage] не удалось убрать старую сводку:', e.message);
+  }
+  st.history = st.history.filter((m) => m.id !== old.id);
+}
+
 /**
  * Раз в минуту из планировщика: один раз зовём подписаться, дальше утренняя и вечерняя сводки по всем очередям
  * и сразу сообщение с отметками подписчиков, как только вышел новый график или он поменялся (ночью не будим).
@@ -340,7 +353,14 @@ export async function outageTick(now = Date.now(), fetchFn = fetch) {
     const people = peopleByGroup(o);
     const hashes = Object.fromEntries(all.map((g) => [g, groupHash(data, g)]));
     const baseline = () => Object.assign(o.hashes, hashes);
-    const send = async (m) => say(chatId, st, m.text, undefined, { entities: m.entities });
+    // Сводка заменяет предыдущую (старая неактуальна), а через сутки без новой исчезает
+    const send = async (m) => {
+      const sent = await say(chatId, st, m.text, undefined, { entities: m.entities });
+      await dropSummary(chatId, st, o);
+      o.lastSummary = { id: sent.message_id, at: Date.now() };
+      return sent;
+    };
+    if (o.lastSummary && now - o.lastSummary.at > 24 * 3600_000) await dropSummary(chatId, st, o);
     try {
       if (isQuiet(hour)) continue;
       if (!o.announced) {
