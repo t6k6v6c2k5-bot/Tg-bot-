@@ -425,6 +425,8 @@ function pickFlightPosts(pages, now) {
       if (!re.test(p.text) && !urgentLocal && !missile) continue;
       // срочный «УВАГА» только для ракет, взрывов/прилётов и призыва укрыться из местного канала; БпЛА — обычное сообщение без паники
       const urgent = missile || urgentLocal || (priorityRe().test(p.text) && IMPACT.test(p.text));
+      // Пока тревога по городу не объявлена, такие сообщения игнорируем. Исключение: быстрые угрозы (ракета, бандероль, КАБ), там счёт на секунды
+      if (!active && !missile) continue;
       found.push({ ...p, channel: ch, priority: urgent || (priorityRe().test(p.text) && isDirectThreat(p.text)), urgent, missile });
     }
   }

@@ -38,11 +38,20 @@ test('«терміново в укриття / коридор» в местно�
     kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Терміново в укриття всім!'), // федеральный канал: без города не считаем
     oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 2000, 'Терміново в укриття! Коридоримся!'),
   };
-  await alertsTick(t0 + 40_000, mkFetch(pages));
-  const got = sent.filter((x) => x[0] === -610);
+  await alertsTick(t0 + 40_000, mkFetch(pages)); // тревоги по городу не объявлено: игнорируем
+  assert.equal(sent.filter((x) => x[0] === -610).length, 0);
+  pages = { ...pages, oborona_kr: pages.oborona_kr + post('oborona_kr', 3, t0 + 41_000, START) };
+  await alertsTick(t0 + 52_000, mkFetch(pages)); // тревогу объявили
+  // пропущенное сообщение попадает в «Причину» объявленной тревоги
+  const alarm = sent.filter((x) => x[0] === -610).map((x) => x[1]).find((t) => /^🚨 ПОВІТРЯНА ТРИВОГА/.test(t));
+  assert.match(alarm, /Причина: Терміново в укриття! Коридоримся!/);
+  // а новое срочное сообщение уже во время тревоги пересылается карточкой
+  pages = { ...pages, oborona_kr: pages.oborona_kr + post('oborona_kr', 4, t0 + 60_000, 'Терміново в укриття! Вибух!') };
+  await alertsTick(t0 + 64_000, mkFetch(pages));
+  const got = sent.filter((x) => x[0] === -610 && /^🚨 УВАГА/.test(x[1]));
   assert.equal(got.length, 1);
-  assert.match(got[0][1], /^🚨 УВАГА\n📍 Кривий Ріг\nТерміново в укриття! Коридоримся!/);
-  assert.ok(got[0][2].entities.some((e) => e.type === 'text_link' && e.url === 'https://t.me/oborona_kr/2')); // источник — ссылка
+  assert.match(got[0][1], /^🚨 УВАГА\n📍 Кривий Ріг\nТерміново в укриття! Вибух!/);
+  assert.ok(got[0][2].entities.some((e) => e.type === 'text_link' && e.url === 'https://t.me/oborona_kr/4')); // источник — ссылка
 });
 
 test('«чисто / вийшов за межі» пересылаем только пока тревога в городе идёт', async () => {

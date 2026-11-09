@@ -70,11 +70,11 @@ test('где летит: БпЛА на город — обычное сообщ�
   st.settings.alerts = true;
   st.alertStatus = { id: 1, active: false, at: 0 }; // закреп уже есть: тест про другое
   const t0 = Date.now();
-  let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+  let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый'), oborona_kr: post('oborona_kr', 1, t0 - 1000, END) };
   await alertsTick(t0, mkFetch(pages)); // baseline
-  pages = { kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Житомирщина: БпЛА курсом на Овруч.') + post('kpszsu', 3, t0 + 2000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.<br/>ℹ️ Alerts Live • Зворотний зв’язок') };
+  pages = { kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Житомирщина: БпЛА курсом на Овруч.') + post('kpszsu', 3, t0 + 2000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.<br/>ℹ️ Alerts Live • Зворотний зв’язок'), oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 500, START) };
   await alertsTick(t0 + 31_000, mkFetch(pages));
-  const mine = sent.filter((x) => x[0] === -602);
+  const mine = sent.filter((x) => x[0] === -602 && !/^🚨 ПОВІТРЯНА ТРИВОГА/.test(x[1])); // без закреплённой тревоги
   assert.equal(mine.length, 1);
   assert.match(mine[0][1], /^🛩 РУХ ПОБЛИЗУ\nДніпропетровщина: БпЛА курсом на Кривий Ріг/); // БпЛА — без паники, просто что и куда
   assert.doesNotMatch(mine[0][1], /УВАГА|укритт/);
@@ -127,11 +127,11 @@ test('прямая угроза и движение рядом различаю�
   st.settings.alerts = true;
   st.alertStatus = { id: 1, active: false, at: 0 };
   const t0 = Date.now();
-  let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+  let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый'), oborona_kr: post('oborona_kr', 1, t0 - 1000, END) };
   await alertsTick(t0, mkFetch(pages));
-  pages = { kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Рух реактивного в напрямку північної частини Кривого Рогу. Попередньо транзит на захід. Решта області жовтий 🟨.') };
+  pages = { kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Рух реактивного в напрямку північної частини Кривого Рогу. Попередньо транзит на захід. Решта області жовтий 🟨.'), oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 500, START) };
   await alertsTick(t0 + 31_000, mkFetch(pages));
-  const mine = sent.filter((x) => x[0] === -603).map((x) => x[1]);
+  const mine = sent.filter((x) => x[0] === -603).map((x) => x[1]).filter((t) => !/^🚨 ПОВІТРЯНА ТРИВОГА/.test(t));
   assert.equal(mine.length, 1);
   assert.match(mine[0], /^🛩 РУХ ПОБЛИЗУ\nРух реактивного/); // обычное сообщение, не «УВАГА»
   assert.doesNotMatch(mine[0], /УВАГА/);
@@ -192,7 +192,10 @@ test('про другие города области не пишем, толь�
   assert.equal(sent.filter((x) => x[0] === -605).length, 0); // ни Дніпро, ни Павлоград, ни Нікополь
   p = { ...p, kpszsu: p.kpszsu + post('kpszsu', 5, t0 + 40_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг') };
   await alertsTick(t0 + 62_000, mkFetch(p));
-  const mine = sent.filter((x) => x[0] === -605).map((x) => x[1]);
+  assert.equal(sent.filter((x) => x[0] === -605).length, 0); // про наш город, но тревога не объявлена: игнорируем
+  p = { ...p, oborona_kr: p.oborona_kr + post('oborona_kr', 2, t0 + 70_000, START), kpszsu: p.kpszsu + post('kpszsu', 6, t0 + 71_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг, північна частина') };
+  await alertsTick(t0 + 93_000, mkFetch(p));
+  const mine = sent.filter((x) => x[0] === -605).map((x) => x[1]).filter((t) => !/^🚨 ПОВІТРЯНА ТРИВОГА/.test(t));
   assert.equal(mine.length, 1);
   assert.match(mine[0], /^🛩 РУХ ПОБЛИЗУ/);
 });
