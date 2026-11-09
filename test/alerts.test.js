@@ -86,11 +86,11 @@ test('где летит: БпЛА на город — обычное сообщ�
 
 test('статус: по городу, а не по области', async () => {
   const t0 = Date.now();
-  let pages = { oborona_kr: post('oborona_kr', 5, t0 - 60_000, START), kpszsu: post('kpszsu', 9, t0 - 5 * 60_000, 'Дніпропетровщина: БпЛА курсом на Павлоград.') };
+  let pages = { oborona_kr: post('oborona_kr', 5, t0 - 60_000, START), kpszsu: post('kpszsu', 9, t0 - 5 * 60_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.') };
   let t = (await alertStatusText(mkFetch(pages, false))).text; // область говорит «нет», район — тревога
   assert.match(t, /^🚨 ПОВІТРЯНА ТРИВОГА\n📍 Кривий Ріг/);
   assert.doesNotMatch(t, /Дніпропетровськ/);
-  assert.match(t, /Павлоград/);
+  assert.match(t, /Кривий Ріг/);
   pages = { oborona_kr: post('oborona_kr', 6, t0 - 60_000, END) };
   t = (await alertStatusText(mkFetch(pages, true))).text;
   assert.match(t, /^🟢 ТРИВОГИ НЕМАЄ\n📍 Кривий Ріг/);
@@ -175,4 +175,24 @@ test('ракеты — срочно в укрытие, БпЛА — без па�
   p = { ...p, kpszsu: p.kpszsu + post('kpszsu', 3, t0 + 40_000, 'Балістика на Кривий Ріг!') };
   await alertsTick(t0 + 62_000, mkFetch(p));
   assert.match(mine().at(-1), /^🚀 РАКЕТНА ЗАГРОЗА\n📍 Кривий Ріг\n‼️ Терміново в укриття!/);
+});
+
+test('про другие города области не пишем, только про Кривой Рог (и ракеты по городу/области)', async () => {
+  _resetAlerts();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t) => (sent.push([id, t]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+  const st = chat(-605);
+  st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 };
+  const t0 = Date.now();
+  let p = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый'), oborona_kr: post('oborona_kr', 1, t0 - 1000, END) };
+  await alertsTick(t0, mkFetch(p));
+  p = { ...p, kpszsu: p.kpszsu + post('kpszsu', 2, t0 + 500, 'Курсом на Дніпро') + post('kpszsu', 3, t0 + 600, 'Дніпропетровщина: БпЛА курсом на Павлоград, Нікополь') + post('kpszsu', 4, t0 + 700, 'Ракета курсом на Нікополь') };
+  await alertsTick(t0 + 31_000, mkFetch(p));
+  assert.equal(sent.filter((x) => x[0] === -605).length, 0); // ни Дніпро, ни Павлоград, ни Нікополь
+  p = { ...p, kpszsu: p.kpszsu + post('kpszsu', 5, t0 + 40_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг') };
+  await alertsTick(t0 + 62_000, mkFetch(p));
+  const mine = sent.filter((x) => x[0] === -605).map((x) => x[1]);
+  assert.equal(mine.length, 1);
+  assert.match(mine[0], /^🛩 РУХ ПОБЛИЗУ/);
 });

@@ -88,7 +88,7 @@ export const config = {
   alertAreaChannels: (env.ALERT_AREA_CHANNELS || 'oborona_kr').split(/[\s,;]+/).filter(Boolean),
   alertRegion: env.ALERT_REGION || 'Дніпропетровська область',
   alertChannels: (env.ALERT_CHANNELS || 'kpszsu,dnipro_alerts,oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean),
-  alertKeywords: (env.ALERT_KEYWORDS || 'Дніпропетров,Дніпро,Кривий Ріг,Кривого Рогу,Кривому Розі,Криворіж,Нікопол,Павлоград,Кам\'янськ,Марганец,Марганець,Жовті Води,Тернів').split(/\s*,\s*/).filter(Boolean),
+  alertKeywords: (env.ALERT_KEYWORDS || '').split(/\s*,\s*/).filter(Boolean), // дополнительные слова (по умолчанию нет): бот пишет только про ваш город (ALERT_PRIORITY)
   // местные каналы Кривого Рога: «терміново в укриття», «коридор», «ховайтесь» там значит, что угроза над городом, даже без названия города
   alertLocal: (env.ALERT_LOCAL_CHANNELS || 'oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean).map((s) => s.toLowerCase()),
   // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов

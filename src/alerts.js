@@ -276,7 +276,7 @@ export const idleText = () => card([{ bold: '🟢 ТРИВОГИ НЕМАЄ' }, 
 
 /** Сообщение «где летит» одним из видов: ракеты, срочно, обновление, обычное */
 export function flightCard(p) {
-  const head = p.missile ? [{ bold: '🚀 РАКЕТНА ЗАГРОЗА' }, place(), { bold: '‼️ Терміново в укриття!' }] : p.urgent ? [{ bold: '🚨 УВАГА' }, place()] : p.update ? [{ bold: 'ℹ️ ОНОВЛЕННЯ' }] : [{ bold: priorityRe().test(p.text) ? '🛩 РУХ ПОБЛИЗУ' : '🛩 РУХ ПО ОБЛАСТІ' }];
+  const head = p.missile ? [{ bold: '🚀 РАКЕТНА ЗАГРОЗА' }, place(), { bold: '‼️ Терміново в укриття!' }] : p.urgent ? [{ bold: '🚨 УВАГА' }, place()] : p.update ? [{ bold: 'ℹ️ ОНОВЛЕННЯ' }] : [{ bold: '🛩 РУХ ПОБЛИЗУ' }];
   return card([...head, { quote: p.text }, sourceLine(p)]);
 }
 
@@ -380,8 +380,9 @@ function pickFlightPosts(pages, now) {
         continue;
       }
       const urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
-      if (!re.test(p.text) && !urgentLocal) continue;
       const missile = isMissileThreat(p.text, local);
+      // только про наш город: пост упоминает его, это призыв укрыться из местного канала или ракетная угроза городу/области
+      if (!re.test(p.text) && !urgentLocal && !missile) continue;
       // срочный «УВАГА» только для ракет, взрывов/прилётов и призыва укрыться из местного канала; БпЛА — обычное сообщение без паники
       const urgent = missile || urgentLocal || (priorityRe().test(p.text) && IMPACT.test(p.text));
       found.push({ ...p, channel: ch, priority: urgent || (priorityRe().test(p.text) && isDirectThreat(p.text)), urgent, missile });
