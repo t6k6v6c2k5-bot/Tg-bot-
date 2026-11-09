@@ -141,11 +141,11 @@ test('устаревшие «летит» убираются по сроку ж�
   const update = sends.find((x) => /ОНОВЛЕННЯ/.test(x[2]))[1];
 
   log.length = 0;
-  await alertsTick(t0 + 16 * 60_000, mkFetch(pages)); // 16 минут: обновление «ℹ️» уже неактуально, БпЛА ещё живёт
+  await alertsTick(t0 + 11 * 60_000, mkFetch(pages)); // 11 минут: обновление «ℹ️» уже неактуально, БпЛА ещё живёт
   assert.deepEqual(log.filter((x) => x[0] === 'del').map((x) => x[1]), [update]);
 
   log.length = 0;
-  await alertsTick(t0 + 32 * 60_000, mkFetch(pages)); // 32 минуты: убрано и «БпЛА», хотя тревога ещё идёт
+  await alertsTick(t0 + 21 * 60_000, mkFetch(pages)); // 21 минута: убрано и «БпЛА», хотя тревога ещё идёт
   assert.deepEqual(log.filter((x) => x[0] === 'del').map((x) => x[1]), [drone]);
   assert.equal(st.alertStatus.id, status); // закреплённая тревога остаётся
 });

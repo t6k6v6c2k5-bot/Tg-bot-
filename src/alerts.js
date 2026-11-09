@@ -199,9 +199,9 @@ async function fetchPages(fetchFn) {
 const subscribed = () => allChats().filter(([id, st]) => id < 0 && alertsOn(st) && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
 const label = () => config.alertAreaLabel;
 
-// Устаревшие сообщения убираем быстро: обычное «летит» живёт 30 минут, обновление «ℹ️» 15, срочное и ракеты 60.
+// Устаревшие сообщения убираем быстро: обычное «летит» живёт 20 минут, обновление «ℹ️» 10, срочное и ракеты 40.
 // Закреплённый статус (kind 'start') без срока: его заменяет следующий статус.
-const TTL_MIN = { flight: 30, update: 15, urgent: 60 };
+const TTL_MIN = { flight: 20, update: 10, urgent: 40 };
 
 const track = (st, sent, kind, ttlMin = 0) => (st.alertMsgs ||= []).push({ id: sent.message_id, at: Date.now(), kind, until: ttlMin ? Date.now() + ttlMin * 60_000 : 0 });
 const quiet = async (fn, what) => {
