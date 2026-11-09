@@ -137,6 +137,18 @@ const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|ср
 export const isUrgentPost = (text) => URGENT.test(text) && !CLEAR.test(text);
 export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text)) && !CLEAR.test(text);
 
+// Прямая угроза городу или просто движение рядом? «Транзит», «повз», «жовтий/жовтогарячий» — не повод кричать «УВАГА».
+const TRANSIT = /транзит|повз|поблизу|вздовж|залишає|не\s+загрожу|на\s+(?:захід|схід|північ|південь)\s+від|жовтогаряч|жовтий|жовта/i;
+const RED = /червон\p{L}*\s+рівен\p{L}*|червон\p{L}*\s+рівн\p{L}*|🟥|🔴/iu;
+const DIRECT = /курсом\s+на|курс\s+на|в\s+напрямку|у\s+напрямку|на\s+Кривий|на\s+Кривого|прямує\s+на|летить\s+на|летять\s+на|заходить|над\s+(?:містом|Кривим)|у\s+бік\s+(?:міста|Кривого)|ціль[:\s]/iu;
+const IMPACT = /вибух|приліт|влучанн|падінн/i;
+/** Срочно (УВАГА, прямая угроза городу) или обычное сообщение о движении поблизости */
+export function isDirectThreat(text) {
+  if (IMPACT.test(text) || RED.test(text)) return true;
+  if (TRANSIT.test(text)) return false;
+  return DIRECT.test(text);
+}
+
 const tokens = (t) => new Set(t.toLowerCase().match(/[а-яіїєґa-z0-9']{3,}/g) || []);
 /** Похожие сообщения из разных каналов об одном и том же: берём первое (кто быстрее написал), остальные пропускаем */
 export function similar(a, b) {
@@ -199,7 +211,7 @@ async function forEachChat(fn) {
 }
 
 const cityName = () => config.alertPriority[0] || 'наше місто';
-export const startText = () => `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}!\nНегайно в укриття, не стійте біля вікон.`;
+export const startText = () => `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}!`; // без «негайно в укриття»: сирена сама по собі не означає прямої загрози, людей не лякаємо
 export const clearText = (mins) => `✅ ВІДБІЙ повітряної тривоги у ${label()}.${mins >= 1 ? ` Тривога тривала ${mins >= 90 ? `${Math.floor(mins / 60)} год ${mins % 60} хв` : `${mins} хв`}.` : ''}`;
 
 export const idleText = () => `🟢 У ${label()} зараз тривоги немає.`;
@@ -305,7 +317,7 @@ function pickFlightPosts(pages, now) {
       }
       const urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
       if (!re.test(p.text) && !urgentLocal) continue;
-      found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) || urgentLocal });
+      found.push({ ...p, channel: ch, priority: urgentLocal || (priorityRe().test(p.text) && isDirectThreat(p.text)) });
     }
   }
   persist();

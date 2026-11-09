@@ -9,7 +9,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'al-'));
 process.env.ALERT_CHANNELS = 'kpszsu,oborona_kr';
 process.env.ALERT_AREA_CHANNELS = 'oborona_kr';
 
-const { parseChannel, cleanPost, areaEvent, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
+const { parseChannel, cleanPost, isDirectThreat, areaEvent, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 
@@ -106,5 +106,31 @@ test('распознавание вопроса и фильтры', () => {
   assert.equal(similar('Дніпропетровщина: БпЛА курсом на Кривий Ріг', 'БпЛА курсом на Кривий Ріг із заходу'), true);
   assert.equal(similar('БпЛА курсом на Кривий Ріг', 'Реактивний від Солоного на захід'), false);
   assert.match(startText(), /у Кривому Розі/);
+  assert.doesNotMatch(startText(), /укритт/); // не пугаем: сирена сама по себе не значит прямую угрозу
   assert.match(clearText(95), /1 год 35 хв/);
+});
+
+test('прямая угроза и движение рядом различаются: «транзит» не кричит УВАГА', async () => {
+  assert.equal(isDirectThreat('Дніпропетровщина: БпЛА курсом на Кривий Ріг.'), true);
+  assert.equal(isDirectThreat('Реактивні БпЛА на Кривий Ріг з півдня!'), true);
+  assert.equal(isDirectThreat('Вибух у Кривому Розі'), true);
+  assert.equal(isDirectThreat('Кривий Ріг червоний рівень, курс на місто'), true);
+  assert.equal(isDirectThreat('Рух реактивного в напрямку північної частини Кривого Рогу. Попередньо транзит на захід. Решта області жовтий 🟨.'), false);
+  assert.equal(isDirectThreat('Кривий Ріг жовтогарячий 🟧. Попередньо транзит на захід реактивного північною частиною міста.'), false);
+
+  _resetAlerts();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t) => (sent.push([id, t]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+  const st = chat(-603);
+  st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 };
+  const t0 = Date.now();
+  let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+  await alertsTick(t0, mkFetch(pages));
+  pages = { kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Рух реактивного в напрямку північної частини Кривого Рогу. Попередньо транзит на захід. Решта області жовтий 🟨.') };
+  await alertsTick(t0 + 31_000, mkFetch(pages));
+  const mine = sent.filter((x) => x[0] === -603).map((x) => x[1]);
+  assert.equal(mine.length, 1);
+  assert.match(mine[0], /^🛩 Рух реактивного/); // обычное сообщение, не «УВАГА»
+  assert.doesNotMatch(mine[0], /УВАГА/);
 });
