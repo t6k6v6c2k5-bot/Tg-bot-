@@ -95,6 +95,22 @@ export function parseChannel(html, channel) {
 
 const escRe = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const priorityRe = () => new RegExp(config.alertPriority.map(escRe).join('|'), 'i');
+// Подходит ли пост: про нашу область, про угрозу и это не «чисто / відбій / вийшов за межі»
+const THREAT = /бпла|безпілот|дрон|шахед|геран|мопед|ракет|реактив|балістик|крилат|кинджал|калібр|іскандер|(?<![а-яa-z])х-\d|вибух|приліт|обстріл|ппо|літак|курс|напрям|транзит|вектор|груп[аиу]|ціль|цілі|летить|летять|рух/i;
+const CLEAR = /чисто|без\s+загроз|відбій|відбо[юя]|вийшов\s+за\s+меж|вийшли\s+за\s+меж|залишив\s+(?:меж|област)|загроза\s+минула|не\s+загрожу|не\s+зафіксован/i;
+export const isThreatPost = (text) => THREAT.test(text) && !CLEAR.test(text);
+
+const tokens = (t) => new Set((t.toLowerCase().match(/[а-яіїєґa-z0-9']{3,}/g) || []));
+/** Похожие сообщения из разных каналов об одном и том же: берём первое (кто быстрее написал), остальные пропускаем */
+export function similar(a, b) {
+  const x = tokens(a);
+  const y = tokens(b);
+  if (!x.size || !y.size) return false;
+  let inter = 0;
+  for (const w of x) if (y.has(w)) inter++;
+  return inter / (x.size + y.size - inter) >= 0.45;
+}
+
 const keywordRe = () => new RegExp([...config.alertKeywords, ...config.alertPriority].map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
 
 /** Новые посты, касающиеся нашей области: baseline при первом запуске (старое не шлём) */
@@ -109,7 +125,7 @@ export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
       const last = S.posts[ch];
       S.posts[ch] = Math.max(...posts.map((p) => p.id), last || 0);
       if (last == null) continue; // первый запуск: запомнили, что уже было
-      for (const p of posts) if (p.id > last && now - p.ts < FRESH_MS && re.test(p.text)) found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) });
+      for (const p of posts) if (p.id > last && now - p.ts < FRESH_MS && re.test(p.text) && isThreatPost(p.text)) found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) });
     } catch (e) {
       console.warn(`[alerts] канал ${ch}:`, e.message);
     }
@@ -161,13 +177,17 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
   }
   if (now - lastChannelAt >= CHANNEL_EVERY_MS) {
     lastChannelAt = now;
-    for (const p of await fetchFlightPosts(now, fetchFn)) {
+    const posts = (await fetchFlightPosts(now, fetchFn)).sort((a, b) => a.ts - b.ts); // кто написал раньше, тот и «первый»
+    for (const p of posts) {
       for (const [chatId, st] of subscribed()) {
         st.alertLog = (st.alertLog || []).filter((t) => now - t < H);
+        st.alertSent = (st.alertSent || []).filter((x) => now - x.at < 15 * 60_000);
+        if (st.alertSent.some((x) => similar(x.text, p.text))) continue; // то же самое уже писали из другого канала
         if (!p.priority) {
-          if (st.alertLog.length >= HOURLY_CAP) continue; // обычные сообщения по области ограничены, про наш город шлём всегда
+          if (st.alertLog.length >= HOURLY_CAP) continue; // обычные сообщения по области ограничены, про наш город почти без лимита
           st.alertLog.push(now);
-        }
+        } else if (st.alertLog.length >= 4 * HOURLY_CAP) continue; // защита от потока в массированную атаку
+        st.alertSent.push({ at: now, text: p.text });
         try {
           await say(chatId, st, p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n${p.text}\n\nДжерело: ${p.link}` : `🛩 ${p.text}\n\nДжерело: ${p.link}`);
         } catch (e) {

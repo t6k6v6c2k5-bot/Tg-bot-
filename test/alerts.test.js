@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'al-'));
+process.env.ALERT_CHANNELS = 'kpszsu';
 
-const { parseChannel, fetchAlertState, alertsTick, alertStatusText, isAlertQuestion, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
+const { parseChannel, fetchAlertState, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 
@@ -71,7 +72,7 @@ test('тревога, где летит и отбой приходят в чат
   // про наш город — отдельное срочное сообщение, и лимит на него не действует
   const on2 = chat(-600);
   on2.alertLog = Array(10).fill(t0 + 125_000);
-  html += post(4, t0 + 126_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг. Укриття!');
+  html += post(4, t0 + 126_000, 'Реактивні Шахеди з півдня на Криворіжжя! Укриття!');
   await alertsTick(t0 + 160_000, fakeFetch);
   assert.match(mine().at(-1), /УВАГА! Щось летить на Кривий Ріг/);
   assert.match(mine().at(-1), /Укриття/);
@@ -97,4 +98,14 @@ test('статус по запросу и распознавание вопро�
   assert.ok(!isAlertQuestion('ты ракета?'));
   assert.match(startText(), /Дніпропетровській області/);
   assert.match(clearText(95), /1 год 35 хв/);
+});
+
+test('«чисто» и «відбій» не тревожат, угроза — да; дубли из разных каналов пропускаются', () => {
+  assert.equal(isThreatPost('Криворіжжя локаційно чисто 📡'), false);
+  assert.equal(isThreatPost('Реактивний вийшов за межі області'), false);
+  assert.equal(isThreatPost('Дніпропетровщина: енергетикам вдалося стабілізувати ситуацію'), false);
+  assert.equal(isThreatPost('Кривий Ріг жовтогарячий. Попередньо транзит на захід реактивного північною частиною міста.'), true);
+  assert.equal(isThreatPost('БпЛА курсом на Кривий Ріг'), true);
+  assert.equal(similar('Дніпропетровщина: БпЛА курсом на Кривий Ріг', 'БпЛА курсом на Кривий Ріг із заходу'), true);
+  assert.equal(similar('БпЛА курсом на Кривий Ріг', 'Реактивний від Солоного на захід'), false);
 });

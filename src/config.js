@@ -83,7 +83,7 @@ export const config = {
   outageRegion: env.OUTAGE_REGION || 'dnipro', // dnipro | kyiv | kyiv-region | odesa
   // Тревоги и «где летит»: состояние тревоги по области (открытые API без ключа) и публичные Telegram-каналы (страница t.me/s/<канал>)
   alertRegion: env.ALERT_REGION || 'Дніпропетровська область',
-  alertChannels: (env.ALERT_CHANNELS || 'kpszsu').split(/[\s,;]+/).filter(Boolean),
+  alertChannels: (env.ALERT_CHANNELS || 'kpszsu,dnipro_alerts,oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean),
   alertKeywords: (env.ALERT_KEYWORDS || 'Дніпропетров,Дніпро,Кривий Ріг,Кривого Рогу,Кривому Розі,Криворіж,Нікопол,Павлоград,Кам\'янськ,Марганец,Марганець,Жовті Води,Тернів').split(/\s*,\s*/).filter(Boolean),
   // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов
   alertPriority: (env.ALERT_PRIORITY || 'Кривий Ріг,Кривого Рогу,Кривому Розі,Кривим Рогом,Криворіж,Кривой Рог,Кривого Рога').split(/\s*,\s*/).filter(Boolean),
