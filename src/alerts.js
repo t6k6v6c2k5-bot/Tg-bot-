@@ -44,6 +44,7 @@ export const _resetAlerts = () => {
   lastChannelAt = 0;
 };
 let lastChannelAt = 0;
+let lastNoSubLog = 0;
 
 async function getText(url, fetchFn) {
   const res = await fetchFn(url, { signal: AbortSignal.timeout(12_000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; batya-bot)' } });
@@ -245,7 +246,14 @@ export const clearText = (mins) => `✅ ВІДБІЙ повітряної три
 
 /** Раз в ~30 секунд: смена состояния тревоги и новые сообщения «где летит» */
 export async function alertsTick(now = Date.now(), fetchFn = fetch) {
-  if (botOff() || !app.telegram || !subscribed().length) return;
+  if (botOff() || !app.telegram) return;
+  if (!subscribed().length) {
+    if (now - lastNoSubLog > 30 * 60_000) {
+      lastNoSubLog = now;
+      console.log('[alerts] нет чатов с включёнными тревогами: включи /тревога вкл в чате или режим «свет и тревога»');
+    }
+    return;
+  }
   load();
   const active = await fetchAlertState(fetchFn);
   if (active !== null) {
@@ -258,6 +266,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
       S.active = active;
       S.since = now;
       persist();
+      console.log(`[alerts] ${active ? 'ТРИВОГА' : 'ОТБОЙ'} в области, чатов: ${subscribed().length}`);
       await (active ? announceStart() : announceClear(mins, now));
     }
   }

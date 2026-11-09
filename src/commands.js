@@ -127,7 +127,9 @@ async function exec(ctx, key, cmd, message) {
         if (!on && botMode(st) === 'lightalert') return void (await reply('В режиме «свет и тревога» тревоги выключить нельзя. Поменяй режим: /режим смешанный'));
         st.settings.alerts = on;
         save();
-        return void (await reply(on ? '🚨 Тревоги включены: буду писать о тревоге, отбое и «где летит» по области из открытых источников.' : 'Тревоги в этом чате выключены.'));
+        await reply(on ? '🚨 Тревоги включены: буду писать о тревоге, отбое и «где летит» по области из открытых источников.' : 'Тревоги в этом чате выключены.');
+        if (on) await reply(await alertStatusText()); // сразу показываем, что сейчас, чтобы не пропустить уже идущую тревогу
+        return;
       }
       await reply(await alertStatusText());
       break;
