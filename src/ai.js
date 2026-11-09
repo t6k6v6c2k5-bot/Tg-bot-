@@ -45,6 +45,28 @@ async function post(url, headers, body) {
 }
 
 const providers = {
+  anthropic: {
+    enabled: () => config.anthropicKeys.length > 0,
+    variants: (tier, offset) => {
+      const models = tier === 'smart' ? [config.anthropicSmartModel, config.anthropicModel] : [config.anthropicModel];
+      const keys = config.anthropicKeys;
+      return [...new Set(models)].flatMap((model) => keys.map((_, i) => ({ model, apiKey: keys[(offset + i) % keys.length] })));
+    },
+    async call({ system, prompt, maxTokens, temperature, model, json, apiKey }) {
+      const data = await post(
+        'https://api.anthropic.com/v1/messages',
+        { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        {
+          model,
+          max_tokens: maxTokens,
+          temperature: Math.min(1, temperature),
+          system: json ? `${system}\n\nВерни ТОЛЬКО валидный JSON без пояснений и без markdown.` : system,
+          messages: [{ role: 'user', content: prompt }],
+        },
+      );
+      return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    },
+  },
   gemini: {
     enabled: () => config.geminiKeys.length > 0,
     // для каждой модели — все ключи, начиная с очередного по кругу (нагрузка делится между аккаунтами)
@@ -165,7 +187,7 @@ function rateOk(high) {
   while (calls.length && now - calls[0] > 60_000) calls.shift();
   // часть лимита зарезервирована под прямые обращения к боту
   // у каждого ключа Gemini своя квота, поэтому общий лимит растёт с их числом
-  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length + config.groqKeys.length + config.extraProviders.reduce((n, c) => n + c.keys.length, 0));
+  const rpm = config.aiRpm * Math.max(1, config.geminiKeys.length + config.anthropicKeys.length + config.groqKeys.length + config.extraProviders.reduce((n, c) => n + c.keys.length, 0));
   const limit = high ? rpm : Math.max(1, Math.floor(rpm * 0.6));
   return calls.length < limit;
 }
@@ -180,7 +202,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
-  const names = (prefer === 'edgy' ? ['grok', 'groq', ...extraNames(), 'gemini'] : ['gemini', 'groq', ...extraNames(), 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
+  const names = (prefer === 'edgy' ? ['anthropic', 'grok', 'groq', ...extraNames(), 'gemini'] : ['anthropic', 'gemini', 'groq', ...extraNames(), 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
   const offset = rr++;
   const seen = new Set();
   const candidates = names
@@ -232,6 +254,7 @@ export function aiStatus(now = Date.now()) {
     .sort((a, b) => b.seconds - a.seconds);
   while (calls.length && now - calls[0] > 60_000) calls.shift();
   return {
+    anthropic: { keys: config.anthropicKeys.length, models: [...new Set([config.anthropicSmartModel, config.anthropicModel])] },
     gemini: { keys: config.geminiKeys.length, models: [...new Set([...config.geminiSmartModels, ...config.geminiModels])] },
     groq: { keys: config.groqKeys.length, models: config.groqModels },
     extra: config.extraProviders.map((c) => ({ name: c.name, keys: c.keys.length, models: c.models })),

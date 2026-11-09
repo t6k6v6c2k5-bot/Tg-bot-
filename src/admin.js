@@ -137,6 +137,7 @@ export function listMenu(now = Date.now()) {
 export function aiText(s) {
   const lines = [
     '🤖 ИИ и ключи',
+    ...(s.anthropic?.keys ? [`Claude: ключей ${s.anthropic.keys}, модели: ${s.anthropic.models.join(', ')}`] : []),
     `Gemini: ключей ${s.gemini.keys}, модели: ${s.gemini.models.join(', ')}`,
     `Groq: ключей ${s.groq.keys}${s.groq.keys ? `, модели: ${s.groq.models.join(', ')}` : ''}`,
     `Grok (xAI): ${s.grok.enabled ? 'есть' : 'нет'}`,

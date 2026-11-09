@@ -47,6 +47,10 @@ export const config = {
   grokKey: env.GROK_API_KEY,
   // Groq (не путать с Grok от xAI): быстрый запасной мозг и Whisper для голосовых
   extraProviders,
+  // Claude (Anthropic API): быстрый и без суточных квот Gemini; ключ только в переменной окружения, не в коде
+  anthropicKeys: keyList(env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEYS),
+  anthropicModel: env.ANTHROPIC_MODEL || 'claude-haiku-5-5', // болтовня
+  anthropicSmartModel: env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-5-5', // объяснения и аналитика
   groqKeys,
   groqModels: keyList(env.GROQ_MODEL || 'openai/gpt-oss-120b,openai/gpt-oss-20b'),
   groqWhisperModel: env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo',

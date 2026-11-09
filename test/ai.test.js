@@ -117,3 +117,33 @@ test('400 «не удалось собрать JSON» не отключает м
   assert.equal(ok?.text, 'обычный ответ'); // ...модель по-прежнему доступна обычным запросам
   assert.ok(seen.every((r) => !r.json)); // для gpt-oss принудительный JSON-режим не включаем
 });
+
+test('Claude (Anthropic) — первый в цепочке, если задан ключ; формат запроса и ответа', async () => {
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-test-1234';
+  const mod = await import(`../src/ai.js?anthropic=${Date.now()}`); // свежий импорт с новым конфигом
+  const { config: c } = await import('../src/config.js');
+  assert.ok(c.anthropicKeys.length === 0 || c.anthropicKeys[0] === 'sk-ant-test-1234');
+  // конфиг уже загружен без ключа: добавляем его как это сделала бы переменная окружения
+  c.anthropicKeys.push('sk-ant-test-1234');
+  const seen = [];
+  globalThis.fetch = async (url, opts) => {
+    seen.push([url, opts.headers, JSON.parse(opts.body)]);
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: 'ответ от Claude' }] }));
+  };
+  const r = await mod.generate({ system: 'sys', prompt: 'привет', maxTokens: 50, temperature: 1.3, json: true });
+  assert.match(r.provider, /^anthropic:claude-haiku/);
+  assert.equal(r.text, 'ответ от Claude');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0][0], 'https://api.anthropic.com/v1/messages');
+  assert.equal(seen[0][1]['x-api-key'], 'sk-ant-test-1234');
+  assert.equal(seen[0][1]['anthropic-version'], '2023-06-01');
+  assert.equal(seen[0][2].messages[0].content, 'привет');
+  assert.equal(seen[0][2].temperature, 1); // у Anthropic максимум 1
+  assert.match(seen[0][2].system, /ТОЛЬКО валидный JSON/);
+  // для «умных» вопросов — Sonnet
+  seen.length = 0;
+  const s = await mod.generate({ system: 's', prompt: 'p', tier: 'smart' });
+  assert.match(s.provider, /^anthropic:claude-sonnet/);
+  c.anthropicKeys.pop();
+  delete process.env.ANTHROPIC_API_KEY;
+});

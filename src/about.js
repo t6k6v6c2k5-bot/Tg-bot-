@@ -10,6 +10,7 @@ export function modelAnswer(now = Date.now(), env = process.env) {
   if (last) lines.push(`Последний ответ дала модель ${last.model} (${last.provider}), ${Math.max(1, Math.round((now - last.at) / 1000))} с назад.`);
   else lines.push('С момента запуска ИИ ещё ни разу не отвечал.');
   const chain = [];
+  if (s.anthropic?.keys) chain.push(`Claude (ключей ${s.anthropic.keys}): ${s.anthropic.models.join(', ')}`);
   if (s.gemini.keys) chain.push(`Gemini (ключей ${s.gemini.keys}): ${s.gemini.models.join(', ')}`);
   if (s.groq.keys) chain.push(`Groq (ключей ${s.groq.keys}): ${s.groq.models.join(', ')}`);
   if (s.grok.enabled) chain.push('Grok (xAI)');
