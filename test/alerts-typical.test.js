@@ -6,7 +6,8 @@ import path from 'node:path';
 import { post, START, END, mkFetch } from './helpers-alerts.js';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'al3-'));
-process.env.ALERT_CHANNELS = 'typical_KR'; // местный канал по умолчанию считается «местным»
+process.env.ALERT_CHANNELS = 'typical_KR'; // проверяем общую логику «местного канала» на примере этого канала
+process.env.ALERT_LOCAL_CHANNELS = 'typical_KR';
 
 const { isUrgentPost, alertsTick, _resetAlerts } = await import('../src/alerts.js');
 const { chat } = await import('../src/store.js');
