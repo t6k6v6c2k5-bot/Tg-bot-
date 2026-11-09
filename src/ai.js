@@ -61,7 +61,7 @@ const providers = {
           max_tokens: maxTokens,
           // temperature у новых моделей Claude объявлена устаревшей (HTTP 400), поэтому не передаём
           // Haiku по умолчанию «думает» и съедает max_tokens → пустой ответ; для болтовни мышление выключаем
-          ...(/haiku/i.test(model) ? { thinking: { type: 'disabled' } } : {}),
+          ...(/haiku/i.test(model) ? { thinking: { type: 'disabled' } } : /sonnet-5-5/i.test(model) ? { thinking: { type: 'between_tools' } } : {}),
           system: json ? `${system}\n\nВерни ТОЛЬКО валидный JSON без пояснений и без markdown.` : system,
           messages: [{ role: 'user', content: prompt }],
         },

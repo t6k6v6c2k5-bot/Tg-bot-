@@ -49,6 +49,8 @@ export const config = {
   extraProviders,
   // Claude (Anthropic API): быстрый и без суточных квот Gemini; ключ только в переменной окружения, не в коде
   // CLAUDE_ONLY=1: тексты пишет только Claude (Gemini остаётся лишь для распознавания фото, Groq — для голосовых)
+  // SMART_DIRECT=1: на прямые обращения к Бате отвечает «умная» модель (ANTHROPIC_SMART_MODEL), фон и самовольные реплики — быстрая
+  smartDirect: env.SMART_DIRECT === '1',
   claudeOnly: env.CLAUDE_ONLY === '1',
   anthropicKeys: keyList(env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEYS),
   anthropicModel: env.ANTHROPIC_MODEL || 'claude-haiku-5-5', // болтовня
