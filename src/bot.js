@@ -53,7 +53,11 @@ export async function createBot() {
   bot.action(/^a:/, (ctx) => onAction(ctx)); // кнопки админки (проверка прав внутри)
 
   // всё, что не текст: стикеры, фото, голосовые, вход/выход людей (текст сюда не доходит)
-  bot.on('message', (ctx) => ingestNonText(ctx));
+  bot.on('message', (ctx) => {
+    // «Батя закрепил сообщение» после тревоги — служебное сообщение, убираем, чтобы не засорять чат
+    if (ctx.message?.pinned_message && ctx.message.from?.id === app.id && chat(ctx.chat.id).settings?.alerts) return ctx.deleteMessage().catch(() => {});
+    return ingestNonText(ctx);
+  });
   bot.on('chat_member', (ctx) => onChatMember(ctx));
 
   bot.catch((e) => console.error('[bot]', e));

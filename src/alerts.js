@@ -147,18 +147,83 @@ export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
 const subscribed = () => allChats().filter(([id, st]) => id < 0 && st.settings?.alerts === true && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
 const regionGen = () => config.alertRegion.replace(/ька область$/, 'ькій області').replace(/область$/, 'області');
 
-async function broadcast(text) {
+const PIN_CLEAR_MS = 15 * 60_000; // отбой держим закреплённым ещё 15 минут и снимаем
+const STALE_MS = 2 * H; // сообщения «летит» без тревоги и отбоя убираем через 2 часа
+
+const track = (st, sent, kind) => (st.alertMsgs ||= []).push({ id: sent.message_id, at: Date.now(), kind });
+const quiet = async (fn, what) => {
+  try {
+    return await fn();
+  } catch (e) {
+    console.warn(`[alerts] ${what}:`, e.message); // нет прав админа (закреплять/удалять) или сообщение уже удалено
+    return null;
+  }
+};
+// закрепление с уведомлением: всем участникам приходит «закреплено сообщение»
+const pin = (chatId, id) => quiet(() => app.telegram.pinChatMessage(chatId, id, { disable_notification: false }), 'закрепить');
+const unpin = (chatId, id) => quiet(() => app.telegram.unpinChatMessage(chatId, id), 'открепить');
+
+/** Удаляем сообщения тревоги (и из истории бота), чтобы чат не засорялся */
+async function wipe(chatId, st, ids) {
+  for (const id of ids) await quiet(() => app.telegram.deleteMessage(chatId, id), 'удалить');
+  st.history = st.history.filter((m) => !ids.includes(m.id));
+}
+
+async function forEachChat(fn) {
   for (const [chatId, st] of subscribed()) {
     try {
-      await say(chatId, st, text);
+      await fn(chatId, st);
     } catch (e) {
       console.error('[alerts]', chatId, e.message);
       if (/\b403\b|chat not found|bot was kicked|bot was blocked/i.test(e.message)) {
         st.kickedAt = Date.now();
-        save();
       }
     }
   }
+  save();
+}
+
+/** Тревога: пишем и закрепляем с уведомлением */
+async function announceStart() {
+  await forEachChat(async (chatId, st) => {
+    if (st.alertPin) await unpin(chatId, st.alertPin); // старый закреплённый отбой больше не нужен
+    st.alertPin = null;
+    const sent = await say(chatId, st, startText());
+    track(st, sent, 'start');
+    if (await pin(chatId, sent.message_id)) st.alertPin = sent.message_id;
+  });
+}
+
+/** Отбой: убираем всё про эту тревогу, оставляем только отбой (он закреплён на 15 минут) */
+async function announceClear(mins, now = Date.now()) {
+  await forEachChat(async (chatId, st) => {
+    if (st.alertPin) await unpin(chatId, st.alertPin);
+    st.alertPin = null;
+    const ids = (st.alertMsgs || []).map((m) => m.id);
+    st.alertMsgs = [];
+    await wipe(chatId, st, ids);
+    const sent = await say(chatId, st, clearText(mins));
+    if (await pin(chatId, sent.message_id)) {
+      st.alertPin = sent.message_id;
+      st.alertUnpinAt = now + PIN_CLEAR_MS;
+    }
+  });
+}
+
+/** Снять закреп с отбоя и убрать «зависшие» сообщения без тревоги (например, пост про Кривой Рог без сирены) */
+async function housekeeping(now) {
+  await forEachChat(async (chatId, st) => {
+    if (st.alertPin && st.alertUnpinAt && now >= st.alertUnpinAt) {
+      await unpin(chatId, st.alertPin);
+      st.alertPin = null;
+      st.alertUnpinAt = 0;
+    }
+    if (!S.active && (st.alertMsgs || []).some((m) => now - m.at > STALE_MS)) {
+      const ids = st.alertMsgs.map((m) => m.id);
+      st.alertMsgs = [];
+      await wipe(chatId, st, ids);
+    }
+  });
 }
 
 const cityName = () => (config.alertPriority[0] || 'наше місто');
@@ -181,7 +246,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
       S.active = active;
       S.since = now;
       persist();
-      await broadcast(active ? startText() : clearText(mins));
+      await (active ? announceStart() : announceClear(mins, now));
     }
   }
   if (now - lastChannelAt >= CHANNEL_EVERY_MS) {
@@ -198,7 +263,8 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
         } else if (st.alertLog.length >= 4 * HOURLY_CAP) continue; // защита от потока в массированную атаку
         st.alertSent.push({ at: now, text: p.text });
         try {
-          await say(chatId, st, p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n${p.text}\n\nДжерело: ${p.link}` : `🛩 ${p.text}\n\nДжерело: ${p.link}`);
+          const sent = await say(chatId, st, p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n${p.text}\n\nДжерело: ${p.link}` : `🛩 ${p.text}\n\nДжерело: ${p.link}`);
+          track(st, sent, 'flight');
         } catch (e) {
           console.error('[alerts]', chatId, e.message);
         }
@@ -206,6 +272,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
     }
     save();
   }
+  await housekeeping(now);
 }
 
 export function startAlerts() {
