@@ -138,7 +138,7 @@ test('Claude (Anthropic) — первый в цепочке, если задан
   assert.equal(seen[0][1]['x-api-key'], 'sk-ant-test-1234');
   assert.equal(seen[0][1]['anthropic-version'], '2023-06-01');
   assert.equal(seen[0][2].messages[0].content, 'привет');
-  assert.equal(seen[0][2].temperature, 1); // у Anthropic максимум 1
+  assert.equal(seen[0][2].temperature, undefined); // у новых моделей Claude temperature устарела (HTTP 400)
   assert.match(seen[0][2].system, /ТОЛЬКО валидный JSON/);
   // для «умных» вопросов — Sonnet
   seen.length = 0;

@@ -59,7 +59,7 @@ const providers = {
         {
           model,
           max_tokens: maxTokens,
-          temperature: Math.min(1, temperature),
+          // temperature у новых моделей Claude объявлена устаревшей (HTTP 400), поэтому не передаём
           system: json ? `${system}\n\nВерни ТОЛЬКО валидный JSON без пояснений и без markdown.` : system,
           messages: [{ role: 'user', content: prompt }],
         },
