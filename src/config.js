@@ -85,6 +85,8 @@ export const config = {
   alertRegion: env.ALERT_REGION || 'Дніпропетровська область',
   alertChannels: (env.ALERT_CHANNELS || 'kpszsu,dnipro_alerts,oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean),
   alertKeywords: (env.ALERT_KEYWORDS || 'Дніпропетров,Дніпро,Кривий Ріг,Кривого Рогу,Кривому Розі,Криворіж,Нікопол,Павлоград,Кам\'янськ,Марганец,Марганець,Жовті Води,Тернів').split(/\s*,\s*/).filter(Boolean),
+  // местные каналы Кривого Рога: «терміново в укриття», «коридор», «ховайтесь» там значит, что угроза над городом, даже без названия города
+  alertLocal: (env.ALERT_LOCAL_CHANNELS || 'oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean).map((s) => s.toLowerCase()),
   // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов
   alertPriority: (env.ALERT_PRIORITY || 'Кривий Ріг,Кривого Рогу,Кривому Розі,Кривим Рогом,Криворіж,Кривой Рог,Кривого Рога').split(/\s*,\s*/).filter(Boolean),
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ

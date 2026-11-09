@@ -98,7 +98,10 @@ const priorityRe = () => new RegExp(config.alertPriority.map(escRe).join('|'), '
 // Подходит ли пост: про нашу область, про угрозу и это не «чисто / відбій / вийшов за межі»
 const THREAT = /бпла|безпілот|дрон|шахед|геран|мопед|ракет|реактив|балістик|крилат|кинджал|калібр|іскандер|(?<![а-яa-z])х-\d|вибух|приліт|обстріл|ппо|літак|курс|напрям|транзит|вектор|груп[аиу]|ціль|цілі|летить|летять|рух/i;
 const CLEAR = /чисто|без\s+загроз|відбій|відбо[юя]|вийшов\s+за\s+меж|вийшли\s+за\s+меж|залишив\s+(?:меж|област)|загроза\s+минула|не\s+загрожу|не\s+зафіксован/i;
-export const isThreatPost = (text) => THREAT.test(text) && !CLEAR.test(text);
+// Призывы укрыться: в местном канале это значит, что что-то летит на город
+const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*)/iu;
+export const isUrgentPost = (text) => URGENT.test(text) && !CLEAR.test(text);
+export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text)) && !CLEAR.test(text);
 
 const tokens = (t) => new Set((t.toLowerCase().match(/[а-яіїєґa-z0-9']{3,}/g) || []));
 /** Похожие сообщения из разных каналов об одном и том же: берём первое (кто быстрее написал), остальные пропускаем */
@@ -125,7 +128,13 @@ export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
       const last = S.posts[ch];
       S.posts[ch] = Math.max(...posts.map((p) => p.id), last || 0);
       if (last == null) continue; // первый запуск: запомнили, что уже было
-      for (const p of posts) if (p.id > last && now - p.ts < FRESH_MS && re.test(p.text) && isThreatPost(p.text)) found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) });
+      for (const p of posts) {
+        if (p.id <= last || now - p.ts >= FRESH_MS || !isThreatPost(p.text)) continue;
+        const local = config.alertLocal.includes(ch.toLowerCase());
+        const urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
+        if (!re.test(p.text) && !urgentLocal) continue;
+        found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) || urgentLocal });
+      }
     } catch (e) {
       console.warn(`[alerts] канал ${ch}:`, e.message);
     }
