@@ -6,7 +6,7 @@ import { startAlerts } from './alerts.js';
 
 if (!config.botToken) throw new Error('Не задан BOT_TOKEN');
 if (!config.geminiKeys.length && !config.groqKeys.length && !config.grokKey && !config.extraProviders.length) throw new Error('Нужен хотя бы один ключ: GEMINI_API_KEY, GROQ_API_KEY, GROK_API_KEY или ключ дополнительного провайдера');
-console.log(`[ai] ключей Gemini: ${config.geminiKeys.length}, Groq: ${config.groqKeys.length}, Grok: ${config.grokKey ? 'есть' : 'нет'}${config.extraProviders.length ? ', ещё: ' + config.extraProviders.map((c) => `${c.name} (${c.keys.length})`).join(', ') : ''}`);
+console.log(`[ai] ключей Claude: ${config.anthropicKeys.length}, Gemini: ${config.geminiKeys.length}, Groq: ${config.groqKeys.length}, Grok: ${config.grokKey ? 'есть' : 'нет'}${config.extraProviders.length ? ', ещё: ' + config.extraProviders.map((c) => `${c.name} (${c.keys.length})`).join(', ') : ''}`);
 
 load();
 const bot = await createBot();
