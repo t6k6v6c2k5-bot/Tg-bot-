@@ -464,6 +464,7 @@ function pickFlightPosts(pages, now) {
     for (const p of posts) {
       if (p.id <= last || now - p.ts >= FRESH_MS || areaEvent(p.text)) continue; // посты о тревоге по району — это состояние, не «летит»
       if (S.active && S.startPost && ch === S.startPost.ch && p.replyTo === S.startPost.id) continue; // ответ на пост о тревоге = причина, она уже в закреплённом сообщении
+      if (config.alertFastOnly && !isMissileThreat(p.text, local)) continue; // только КАБы, бандероли, ракеты
       if (!isThreatPost(p.text)) {
         // «чисто / вийшов за межі / без загроз» во время тревоги — обновление, без тревоги — пропускаем
         if (active && isUpdatePost(p.text) && (re.test(p.text) || local)) found.push({ ...p, channel: ch, priority: false, update: true });

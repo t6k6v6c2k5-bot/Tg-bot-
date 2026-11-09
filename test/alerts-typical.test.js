@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { post, START, END, mkFetch } from './helpers-alerts.js';
 
+process.env.ALERT_FAST_ONLY = '0'; // эти тесты проверяют все виды сообщений
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'al3-'));
 process.env.ALERT_CHANNELS = 'typical_KR'; // проверяем общую логику «местного канала» на примере этого канала
 process.env.ALERT_LOCAL_CHANNELS = 'typical_KR';

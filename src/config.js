@@ -95,6 +95,8 @@ export const config = {
   alertLocal: (env.ALERT_LOCAL_CHANNELS || 'oborona_kr,IMS_KR_TM').split(/[\s,;]+/).filter(Boolean).map((s) => s.toLowerCase()),
   // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов
   alertPriority: (env.ALERT_PRIORITY ? env.ALERT_PRIORITY.split(/\s*,\s*/).filter(Boolean) : OUR_PLACES), // всё, что считается «нашими краями» (см. src/geo.js)
+  // Писать только про быстрые угрозы (КАБ, бандероль, ракеты); БпЛА, обновления и «гучно» не пересылать. ALERT_FAST_ONLY=0 вернёт всё
+  alertFastOnly: env.ALERT_FAST_ONLY !== '0',
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ
   outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
   outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра

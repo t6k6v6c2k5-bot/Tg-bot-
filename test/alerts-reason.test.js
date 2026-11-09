@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { post, reply, START, END, mkFetch } from './helpers-alerts.js';
 
+process.env.ALERT_FAST_ONLY = '0'; // эти тесты проверяют все виды сообщений
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'rsn-'));
 process.env.ALERT_CHANNELS = 'oborona_kr,kpszsu';
 process.env.ALERT_AREA_CHANNELS = 'oborona_kr';
