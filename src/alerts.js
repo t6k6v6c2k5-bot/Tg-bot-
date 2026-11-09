@@ -30,12 +30,13 @@ const load = () => {
   }
   S.posts ||= {};
   S.areaPosts ||= {};
+  S.reasons ||= []; // причины текущей тревоги (из первых постов и из ответов на пост о тревоге)
   return S;
 };
 const persist = () => {
   try {
     fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(FILE(), JSON.stringify({ active: S.active, since: S.since, posts: S.posts, areaPosts: S.areaPosts }));
+    fs.writeFileSync(FILE(), JSON.stringify({ active: S.active, since: S.since, posts: S.posts, areaPosts: S.areaPosts, startPost: S.startPost, reasons: S.reasons }));
   } catch (e) {
     console.error('[alerts] не удалось сохранить:', e.message);
   }
@@ -98,15 +99,18 @@ export const cleanPost = (text) =>
 /** Посты из страницы t.me/s/<канал>: [{ id, text, ts, link }] (подписи каналов убраны) */
 export function parseChannel(html, channel) {
   const out = [];
-  for (const block of html.split('tgme_widget_message_wrap').slice(1)) {
+  for (let block of html.split('tgme_widget_message_wrap').slice(1)) {
     const post = block.match(/data-post="([^"/]+)\/(\d+)"/);
-    const body = block.match(/<div class="tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/);
+    // ответ на другое сообщение: у него внутри ссылка с цитатой, её текст не должен считаться текстом самого поста
+    const reply = block.match(/<a class="tgme_widget_message_reply[^>]*href="https:\/\/t\.me\/[^"/]+\/(\d+)"[^>]*>[\s\S]*?<\/a>/);
+    if (reply) block = block.replace(reply[0], '');
+    const body = block.match(/<div class="tgme_widget_message_text js-message_text[^>]*>([\s\S]*?)<\/div>/);
     const time = block.match(/<time[^>]*datetime="([^"]+)"/);
     if (!post || !body) continue;
     const raw = decode(body[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/[ \t]+\n/g, '\n').trim();
     const text = cleanPost(raw);
     if (!text) continue;
-    out.push({ id: Number(post[2]), text, ts: time ? Date.parse(time[1]) : 0, link: `https://t.me/${post[1]}/${post[2]}` });
+    out.push({ id: Number(post[2]), text, ts: time ? Date.parse(time[1]) : 0, link: `https://t.me/${post[1]}/${post[2]}`, replyTo: reply ? Number(reply[1]) : 0 });
   }
   return out.sort((a, b) => a.id - b.id);
 }
@@ -342,7 +346,7 @@ async function ensureStatus(now, pages = null) {
   const active = S.active === true;
   await forEachChat(async (chatId, st) => {
     if (st.alertStatus && st.alertStatus.active === active) return;
-    await postStatus(chatId, st, active, { initial: true, now, reason: active ? reasonFrom(pages, now) : null });
+    await postStatus(chatId, st, active, { initial: true, now, reason: active ? reasonNow() || reasonFrom(pages, now) : null });
   });
 }
 
@@ -360,6 +364,7 @@ async function housekeeping(now) {
 /** Смена состояния тревоги в городе по постам каналов: первый запуск запоминает состояние молча */
 async function processArea(pages, now) {
   const events = [];
+  const replies = []; // новые ответы на посты канала: иногда причину тревоги пишут вторым сообщением
   for (const ch of config.alertAreaChannels) {
     const posts = pages[ch];
     if (!posts?.length) continue;
@@ -367,7 +372,9 @@ async function processArea(pages, now) {
     S.areaPosts[ch] = Math.max(...posts.map((p) => p.id), last || 0);
     for (const p of posts) {
       const ev = areaEvent(p.text);
-      if (ev && (last == null || p.id > last)) events.push({ ...p, ev });
+      const fresh = last == null || p.id > last;
+      if (ev && fresh) events.push({ ...p, ev, ch });
+      else if (!ev && fresh && p.replyTo) replies.push({ ...p, ch });
     }
   }
   events.sort((a, b) => a.ts - b.ts);
@@ -379,14 +386,52 @@ async function processArea(pages, now) {
     const wasNull = S.active === null;
     S.active = active;
     S.since = e.ts;
+    if (active) {
+      S.startPost = { ch: e.ch, id: e.id };
+      S.reasons = [];
+    }
     // без тревоги в памяти (первый запуск) или пост устарел (простой бота) — только запоминаем
     if (wasNull || now - e.ts > FRESH_MS) continue;
     console.log(`[alerts] ${active ? 'ТРИВОГА' : 'ОТБОЙ'} в ${label()}, чатов: ${subscribed().length}`);
     persist();
-    await (active ? announceStart(reasonFrom(pages, now)) : announceClear(Math.max(0, mins), now));
+    const first = active ? reasonFrom(pages, now) : null;
+    if (first) S.reasons = [first.text];
+    await (active ? announceStart(first) : announceClear(Math.max(0, mins), now));
   }
+  await applyReasonReplies(replies, now);
   if (baseline && S.active === null) S.active = false; // постов по району не нашли: считаем, что тревоги нет
   persist();
+}
+
+/** Ответ на пост о тревоге («Шахедна / По реактивному зі сходу») = причина тревоги: дописываем её в закреплённое сообщение */
+async function applyReasonReplies(replies, now) {
+  if (S.active !== true || !S.startPost) return;
+  let changed = false;
+  for (const r of replies) {
+    if (r.ch !== S.startPost.ch || r.replyTo !== S.startPost.id || isNoise(r.text) || areaEvent(r.text)) continue;
+    const t = r.text.replace(/\s*\n+\s*/g, ' · ').trim();
+    if (S.reasons.some((x) => x === t)) continue;
+    S.reasons = [...S.reasons, t].slice(-3);
+    changed = true;
+  }
+  if (!changed) return;
+  persist();
+  console.log(`[alerts] причина тревоги: ${S.reasons.join(' | ')}`);
+  await refreshStatusReason(now);
+}
+
+/** Собрать «причину» из накопленных строк */
+const reasonNow = () => (S.reasons.length ? { text: clip(S.reasons.join(' · '), 260), missile: S.reasons.some((t) => isMissileThreat(t, true)) } : null);
+
+/** Обновить закреплённую тревогу в чатах (редактирование сообщения, а не новое) */
+async function refreshStatusReason(now = Date.now()) {
+  const reason = reasonNow();
+  await forEachChat(async (chatId, st) => {
+    const s = st.alertStatus;
+    if (!s?.active || !s.id) return;
+    const msg = startText(reason, s.at);
+    await quiet(() => app.telegram.editMessageText(chatId, s.id, undefined, msg.text, { entities: msg.entities, link_preview_options: { is_disabled: true } }), 'обновить причину');
+  });
 }
 
 /** Другой канал за последние 3 минуты тоже пишет об угрозе нашему городу (подтверждение) */
@@ -409,6 +454,7 @@ function pickFlightPosts(pages, now) {
     const local = config.alertLocal.includes(ch.toLowerCase());
     for (const p of posts) {
       if (p.id <= last || now - p.ts >= FRESH_MS || areaEvent(p.text)) continue; // посты о тревоге по району — это состояние, не «летит»
+      if (S.active && S.startPost && ch === S.startPost.ch && p.replyTo === S.startPost.id) continue; // ответ на пост о тревоге = причина, она уже в закреплённом сообщении
       if (!isThreatPost(p.text)) {
         // «чисто / вийшов за межі / без загроз» во время тревоги — обновление, без тревоги — пропускаем
         if (active && isUpdatePost(p.text) && (re.test(p.text) || local)) found.push({ ...p, channel: ch, priority: false, update: true });
