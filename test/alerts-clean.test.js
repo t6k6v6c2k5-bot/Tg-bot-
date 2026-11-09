@@ -13,7 +13,7 @@ const { alertsTick, _resetAlerts } = await import('../src/alerts.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 
-test('отбой: всё про тревогу удаляется, остаётся только отбой; тревога и отбой закрепляются, отбой снимается через 15 минут', async () => {
+test('закреп всегда актуален: тревога и отбой закрепляются с уведомлением, остаётся только текущее сообщение', async () => {
   _resetAlerts();
   const log = [];
   let n = 100;
@@ -27,32 +27,72 @@ test('отбой: всё про тревогу удаляется, остаёт�
   const st = chat(-700);
   st.settings.alerts = true;
   const t0 = Date.now();
-  let pages = { oborona_kr: post('oborona_kr', 1, t0 - 1000, END), kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
-  await alertsTick(t0, mkFetch(pages)); // baseline
+  const sends = () => log.filter((x) => x[0] === 'send');
+  let pages = { oborona_kr: post('oborona_kr', 1, t0 - 3_600_000, END), kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+
+  // 1) подключили чат: сразу закрепляется «тревоги нет» (тихо)
+  await alertsTick(t0, mkFetch(pages));
+  assert.match(sends()[0][2], /зараз тривоги немає/);
+  const idle = sends()[0][1];
+  assert.deepEqual(log.find((x) => x[0] === 'pin'), ['pin', idle, true]); // без звонка
+  assert.equal(st.alertStatus.active, false);
+
+  // 2) тревога: новое сообщение закреплено С уведомлением, старый статус откреплён и удалён
+  log.length = 0;
   pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 1000, START), kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 2000, 'Реактивні БпЛА на Кривий Ріг з півдня!') };
   await alertsTick(t0 + 31_000, mkFetch(pages));
-  const sends = () => log.filter((x) => x[0] === 'send');
-  assert.match(sends()[0][2], /ПОВІТРЯНА ТРИВОГА/);
-  assert.deepEqual(log.find((x) => x[0] === 'pin'), ['pin', sends()[0][1], false]); // закреплено С уведомлением
-  assert.match(sends()[1][2], /Кривий Ріг/);
-  const ids = [sends()[0][1], sends()[1][1]];
+  const alarmMsg = sends()[0];
+  assert.match(alarmMsg[2], /ПОВІТРЯНА ТРИВОГА/);
+  assert.ok(log.some((x) => x[0] === 'unpin' && x[1] === idle));
+  assert.ok(log.some((x) => x[0] === 'del' && x[1] === idle));
+  assert.deepEqual(log.find((x) => x[0] === 'pin'), ['pin', alarmMsg[1], false]); // закреплено С уведомлением
+  assert.match(sends()[1][2], /Кривий Ріг/); // «летит»
+  assert.equal(st.alertStatus.active, true);
+  const flightId = sends()[1][1];
 
+  // 3) отбой: удалены тревога и «летит», остаётся только отбой, он закреплён с уведомлением и остаётся закреплённым
   log.length = 0;
   pages = { ...pages, oborona_kr: pages.oborona_kr + post('oborona_kr', 3, t0 + 20 * 60_000 - 5000, END) };
   await alertsTick(t0 + 20 * 60_000, mkFetch(pages));
   const dels = log.filter((x) => x[0] === 'del').map((x) => x[1]);
-  assert.deepEqual(dels.sort(), ids.sort()); // удалены и тревога, и «летит»
-  assert.ok(log.some((x) => x[0] === 'unpin' && x[1] === ids[0])); // тревога откреплена
+  assert.deepEqual(dels.sort(), [alarmMsg[1], flightId].sort());
+  assert.ok(log.some((x) => x[0] === 'unpin' && x[1] === alarmMsg[1]));
   const clearMsg = sends().at(-1);
   assert.match(clearMsg[2], /ВІДБІЙ/);
-  assert.match(clearMsg[2], /19 хв|20 хв/);
-  assert.ok(log.some((x) => x[0] === 'pin' && x[1] === clearMsg[1] && x[2] === false)); // отбой закреплён с уведомлением
-  assert.equal(st.history.some((m) => ids.includes(m.id)), false); // и из истории убрано
+  assert.ok(log.some((x) => x[0] === 'pin' && x[1] === clearMsg[1] && x[2] === false));
+  assert.equal(st.history.some((m) => [alarmMsg[1], flightId].includes(m.id)), false);
+  assert.equal(st.alertStatus.active, false);
 
+  // 4) отбой НЕ откреплается сам: в закрепе всегда актуальное состояние
   log.length = 0;
-  await alertsTick(t0 + 20 * 60_000 + 16 * 60_000, mkFetch(pages)); // через 15 минут снимаем закреп с отбоя
-  assert.ok(log.some((x) => x[0] === 'unpin' && x[1] === clearMsg[1]));
-  assert.equal(log.some((x) => x[0] === 'del'), false); // сам отбой остаётся
+  await alertsTick(t0 + 3 * 3600_000, mkFetch(pages));
+  assert.equal(log.length, 0);
+
+  // 5) новая тревога убирает старый отбой
+  pages = { ...pages, oborona_kr: pages.oborona_kr + post('oborona_kr', 4, t0 + 3 * 3600_000 + 40_000, START) };
+  await alertsTick(t0 + 3 * 3600_000 + 60_000, mkFetch(pages));
+  assert.ok(log.some((x) => x[0] === 'del' && x[1] === clearMsg[1]));
+  assert.match(sends().at(-1)[2], /ПОВІТРЯНА ТРИВОГА/);
+});
+
+test('чат подключили во время тревоги: сразу закрепляется тревога с уведомлением', async () => {
+  _resetAlerts();
+  const log = [];
+  let n = 300;
+  app.telegram = {
+    sendMessage: async (id, t) => (log.push(['send', ++n, t]), { message_id: n }),
+    pinChatMessage: async (id, mid, o) => log.push(['pin', mid, o.disable_notification]),
+    unpinChatMessage: async () => true,
+    deleteMessage: async () => true,
+  };
+  const st = chat(-702);
+  st.settings.alerts = true;
+  const t0 = Date.now();
+  const pages = { oborona_kr: post('oborona_kr', 1, t0 - 40 * 60_000, END) + post('oborona_kr', 2, t0 - 30 * 60_000, START) }; // тревога идёт уже полчаса
+  await alertsTick(t0, mkFetch(pages));
+  const mine = log.filter((x) => x[0] === 'send');
+  assert.match(mine[0][2], /ПОВІТРЯНА ТРИВОГА/);
+  assert.deepEqual(log.find((x) => x[0] === 'pin'), ['pin', mine[0][1], false]);
 });
 
 test('нет прав админа: тревога всё равно приходит, ошибки закрепления не ломают рассылку', async () => {

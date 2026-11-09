@@ -39,6 +39,7 @@ test('тревога по району объявляется, область н
   app.id = 1;
   const on = chat(-600);
   on.settings.alerts = true;
+  on.alertStatus = { id: 1, active: false, at: 0 }; // закреп уже есть: тест про другое
   const off = chat(-601);
   const t0 = Date.now();
   let pages = { oborona_kr: post('oborona_kr', 1, t0 - 3_600_000, END) };
@@ -67,6 +68,7 @@ test('где летит: про город срочно, ссылки без п�
   app.telegram = { sendMessage: async (id, t, o) => (sent.push([id, t, o]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
   const st = chat(-602);
   st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 }; // закреп уже есть: тест про другое
   const t0 = Date.now();
   let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
   await alertsTick(t0, mkFetch(pages)); // baseline

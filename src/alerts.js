@@ -165,7 +165,6 @@ async function fetchPages(fetchFn) {
 const subscribed = () => allChats().filter(([id, st]) => id < 0 && alertsOn(st) && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
 const label = () => config.alertAreaLabel;
 
-const PIN_CLEAR_MS = 15 * 60_000; // отбой держим закреплённым ещё 15 минут и снимаем
 const STALE_MS = 2 * H; // сообщения «летит» без тревоги и отбоя убираем через 2 часа
 
 const track = (st, sent, kind) => (st.alertMsgs ||= []).push({ id: sent.message_id, at: Date.now(), kind });
@@ -203,41 +202,48 @@ const cityName = () => config.alertPriority[0] || 'наше місто';
 export const startText = () => `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}!\nНегайно в укриття, не стійте біля вікон.`;
 export const clearText = (mins) => `✅ ВІДБІЙ повітряної тривоги у ${label()}.${mins >= 1 ? ` Тривога тривала ${mins >= 90 ? `${Math.floor(mins / 60)} год ${mins % 60} хв` : `${mins} хв`}.` : ''}`;
 
-/** Тревога: пишем и закрепляем с уведомлением */
-async function announceStart() {
+export const idleText = () => `🟢 У ${label()} зараз тривоги немає.`;
+
+/**
+ * Закреплённое сообщение чата всегда показывает актуальное состояние: «ТРИВОГА» или «ВІДБІЙ / тривоги немає».
+ * Новое состояние = новое сообщение (закрепляется с уведомлением), старое откреплено и удалено, чат чистый.
+ * @param {boolean} active  тревога идёт
+ * @param {{mins?:number, now?:number, initial?:boolean}} o  initial — просто привести закреп в соответствие (без «отбоя» из ниоткуда)
+ */
+async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), initial = false } = {}) {
+  const old = st.alertStatus;
+  if (old?.id) await unpin(chatId, old.id);
+  if (st.alertPin && st.alertPin !== old?.id) await unpin(chatId, st.alertPin);
+  st.alertPin = null;
+  const ids = new Set((st.alertMsgs || []).map((m) => m.id));
+  if (!active && old?.id) ids.add(old.id); // отбой вытесняет и тревогу, и все «летит…»
+  if (active && old && !old.active) ids.add(old.id); // новая тревога убирает старый отбой
+  st.alertMsgs = [];
+  await wipe(chatId, st, [...ids]);
+  const text = active ? startText() : initial ? idleText() : clearText(mins);
+  const sent = await say(chatId, st, text);
+  if (active) track(st, sent, 'start');
+  st.alertStatus = { id: sent.message_id, active, at: now };
+  // тревога и отбой закрепляются с уведомлением; «просто нет тревоги» при подключении чата — тихо
+  const notify = active || !initial;
+  if (await quiet(() => app.telegram.pinChatMessage(chatId, sent.message_id, { disable_notification: !notify }), 'закрепить')) st.alertPin = sent.message_id;
+}
+
+const announceStart = () => forEachChat((chatId, st) => postStatus(chatId, st, true));
+const announceClear = (mins, now) => forEachChat((chatId, st) => postStatus(chatId, st, false, { mins, now }));
+
+/** Привести закреп в каждом чате в соответствие с текущим состоянием (новый чат, перезапуск, пропущенное событие) */
+async function ensureStatus(now) {
+  const active = S.active === true;
   await forEachChat(async (chatId, st) => {
-    if (st.alertPin) await unpin(chatId, st.alertPin); // старый закреплённый отбой больше не нужен
-    st.alertPin = null;
-    const sent = await say(chatId, st, startText());
-    track(st, sent, 'start');
-    if (await pin(chatId, sent.message_id)) st.alertPin = sent.message_id;
+    if (st.alertStatus && st.alertStatus.active === active) return;
+    await postStatus(chatId, st, active, { initial: true, now });
   });
 }
 
-/** Отбой: убираем всё про эту тревогу, оставляем только отбой (он закреплён на 15 минут) */
-async function announceClear(mins, now = Date.now()) {
-  await forEachChat(async (chatId, st) => {
-    if (st.alertPin) await unpin(chatId, st.alertPin);
-    st.alertPin = null;
-    const ids = (st.alertMsgs || []).map((m) => m.id);
-    st.alertMsgs = [];
-    await wipe(chatId, st, ids);
-    const sent = await say(chatId, st, clearText(mins));
-    if (await pin(chatId, sent.message_id)) {
-      st.alertPin = sent.message_id;
-      st.alertUnpinAt = now + PIN_CLEAR_MS;
-    }
-  });
-}
-
-/** Снять закреп с отбоя и убрать «зависшие» сообщения без тревоги (например, пост про город без сирены) */
+/** Убрать «зависшие» сообщения «летит» без тревоги (например, пост про город без сирены) */
 async function housekeeping(now) {
   await forEachChat(async (chatId, st) => {
-    if (st.alertPin && st.alertUnpinAt && now >= st.alertUnpinAt) {
-      await unpin(chatId, st.alertPin);
-      st.alertPin = null;
-      st.alertUnpinAt = 0;
-    }
     if (!S.active && (st.alertMsgs || []).some((m) => now - m.at > STALE_MS)) {
       const ids = st.alertMsgs.map((m) => m.id);
       st.alertMsgs = [];
@@ -321,6 +327,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
     lastChannelAt = now;
     const pages = await fetchPages(fetchFn);
     await processArea(pages, now);
+    await ensureStatus(now);
     for (const p of pickFlightPosts(pages, now)) {
       for (const [chatId, st] of subscribed()) {
         st.alertLog = (st.alertLog || []).filter((t) => now - t < H);

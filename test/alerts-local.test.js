@@ -30,6 +30,7 @@ test('«терміново в укриття / коридор» в местно�
   const sent = mock();
   const st = chat(-610);
   st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 }; // закреп уже есть: тест про другое
   const t0 = Date.now();
   let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый'), oborona_kr: post('oborona_kr', 1, t0 - 1000, 'старый') };
   await alertsTick(t0, mkFetch(pages)); // baseline
@@ -49,6 +50,7 @@ test('«чисто / вийшов за межі» пересылаем толь�
   const sent = mock();
   const st = chat(-620);
   st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 }; // закреп уже есть: тест про другое
   const t0 = Date.now();
   const mine = () => sent.filter((x) => x[0] === -620).map((x) => x[1]);
   let pages = { oborona_kr: post('oborona_kr', 1, t0 - 1000, 'старый') };
