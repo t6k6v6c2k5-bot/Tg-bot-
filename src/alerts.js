@@ -134,15 +134,20 @@ const CLEAR = new RegExp(`${END.source}|${SOFT.source}`, 'i');
 // Не оповещения: сборы денег, реклама, длинные тексты со ссылками и номерами карт. Сообщение об угрозе короткое и без ссылок.
 const AD = /збір|збору|збірк|збираємо|зібрати|скинутись|скиньтесь|донат|реквізит|monobank|монобанк|send\.mono|privat24|внесок|внески|поповни|тепловізор|обладнання\s+для|підтримайте|благодійн|волонтер|на\s+потреби/i;
 const CARD = /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/;
-export const isNoise = (text) => text.length > 350 || /https?:\/\//i.test(text) || CARD.test(text) || AD.test(text);
+// Рассказ о том, что уже произошло (последствия, удар, пострадавшие), — новости, а не оповещение об угрозе
+const AFTERMATH = /завдав\s+удар|завдали\s+удар|завдано\s+удар|наслідк|постражда|уражен|знищен|пошкодж|загин|поранен|збито|збит[іиа]\s|евакуац|руйнуван/i;
+export const isNoise = (text) => AFTERMATH.test(text) || text.length > 350 || /https?:\/\//i.test(text) || CARD.test(text) || AD.test(text);
 
 export const isUpdatePost = (text) => SOFT.test(text) && !END.test(text) && !isNoise(text);
 // Призывы укрыться: в местном канале это значит, что что-то летит на город
-const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*|гучн\p{L}*|працю\p{L}*\s+ппо|ппо\s+працю\p{L}*)/iu;
+const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*)/iu;
+// «Гучно» и «працює ППО» одни по себе ничего не доказывают (учения, подрыв, шум): срочным их считаем только во время тревоги или если об угрозе пишет ещё кто-то
+const LOUD = /(?<![а-яіїєґa-z])(?:гучн\p{L}*|працю\p{L}*\s+ппо|ппо\s+працю\p{L}*)/iu;
+export const isLoudOnly = (text) => LOUD.test(text.replace(MAYBE_LOUD, '')) && !URGENT.test(text);
 // «Може бути гучно» — прогноз, а не событие
 const MAYBE_LOUD = /(?:може|можуть|можливо)\s+бути\s+гучн/i;
-export const isUrgentPost = (text) => URGENT.test(text.replace(MAYBE_LOUD, '')) && !CLEAR.test(text) && !isNoise(text);
-export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text.replace(MAYBE_LOUD, ''))) && !CLEAR.test(text) && !isNoise(text);
+export const isUrgentPost = (text) => (URGENT.test(text) || LOUD.test(text.replace(MAYBE_LOUD, ''))) && !CLEAR.test(text) && !isNoise(text);
+export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text) || LOUD.test(text.replace(MAYBE_LOUD, ''))) && !CLEAR.test(text) && !isNoise(text);
 
 // Прямая угроза городу или просто движение рядом? «Транзит», «повз», «жовтий/жовтогарячий» — не повод кричать «УВАГА».
 const TRANSIT = /транзит|повз|поблизу|вздовж|залишає|не\s+загрожу|на\s+(?:захід|схід|північ|південь)\s+від|жовтогаряч|жовтий|жовта/i;
@@ -384,6 +389,12 @@ async function processArea(pages, now) {
   persist();
 }
 
+/** Другой канал за последние 3 минуты тоже пишет об угрозе нашему городу (подтверждение) */
+function corroborated(p, pages) {
+  const re = keywordRe();
+  return Object.entries(pages).some(([ch, posts]) => ch !== p.channel && posts.some((q) => Math.abs(q.ts - p.ts) < 180_000 && isThreatPost(q.text) && (re.test(q.text) || isUrgentPost(q.text))));
+}
+
 /** Новые посты «где летит»: baseline при первом запуске (старое не шлём) */
 function pickFlightPosts(pages, now) {
   const re = keywordRe();
@@ -403,7 +414,12 @@ function pickFlightPosts(pages, now) {
         if (active && isUpdatePost(p.text) && (re.test(p.text) || local)) found.push({ ...p, channel: ch, priority: false, update: true });
         continue;
       }
-      const urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
+      let urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
+      // одно «Гучно.» без тревоги и без подтверждения из другого источника — не повод кричать
+      if (urgentLocal && isLoudOnly(p.text) && !active && !corroborated({ ...p, channel: ch }, pages)) {
+        if (!re.test(p.text)) continue;
+        urgentLocal = false;
+      }
       const missile = isMissileThreat(p.text, local);
       // только про наш город: пост упоминает его, это призыв укрыться из местного канала или ракетная угроза городу/области
       if (!re.test(p.text) && !urgentLocal && !missile) continue;

@@ -75,3 +75,39 @@ test('сборы денег и реклама не публикуются', asyn
   await alertsTick(t0 + 11_000, mkFetch(p));
   assert.equal(sent.filter((x) => x[0] === -641).length, 0);
 });
+
+test('одно «Гучно.» без тревоги и подтверждения — молчим; в тревогу или с подтверждением — пишем; рассказ о последствиях — нет', async () => {
+  const { isLoudOnly, isNoise, isThreatPost } = await import('../src/alerts.js');
+  assert.equal(isLoudOnly('Гучно.🤯'), true);
+  assert.equal(isLoudOnly('Вибух у місті. Гучно'), false); // «вибух» — само по себе
+  const after = 'Ворог завдав удару БпЛА "Бандероль" по об\'єкту інфраструктури в північній частині міста.\nПопередньо – без постраждалих';
+  assert.equal(isNoise(after), true);
+  assert.equal(isThreatPost(after), false);
+  assert.equal(isMissileThreat(after), false);
+
+  const mkChat = (id) => {
+    const st = chat(id);
+    st.settings.alerts = true;
+    st.alertStatus = { id: 1, active: false, at: 0 };
+    return st;
+  };
+  const run = async (id, pagesAfter, apiAreaStart = false) => {
+    _resetAlerts();
+    const sent = [];
+    app.telegram = { sendMessage: async (cid, t) => (sent.push([cid, t]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+    mkChat(id);
+    for (const other of [-640, -641, -642, -643, -644]) if (other !== id) chat(other).settings.alerts = false;
+    const t0 = Date.now();
+    const base = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый'), oborona_kr: post('oborona_kr', 1, t0 - 1000, END), typical_KR: post('typical_KR', 1, t0 - 1000, 'старый') };
+    await alertsTick(t0, mkFetch(base));
+    const next = pagesAfter(t0, base);
+    await alertsTick(t0 + 11_000, mkFetch(next));
+    return sent.filter((x) => x[0] === id).map((x) => x[1]);
+  };
+  // 1) одно «Гучно.», тревоги нет, больше никто не пишет
+  let got = await run(-642, (t0, b) => ({ ...b, oborona_kr: b.oborona_kr + post('oborona_kr', 2, t0 + 500, 'Гучно.🤯') }));
+  assert.equal(got.length, 0);
+  // 2) рассказ о последствиях
+  got = await run(-643, (t0, b) => ({ ...b, typical_KR: b.typical_KR + post('typical_KR', 2, t0 + 500, 'Ворог завдав удару БпЛА "Бандероль" по об\'єкту інфраструктури в північній частині міста.<br/>Попередньо – без постраждалих') }));
+  assert.equal(got.length, 0);
+});
