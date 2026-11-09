@@ -101,7 +101,8 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   if (mode) {
     // «есть тревога?», «где летит» — сводка из открытых источников, а не шутка
     if (mode === 'direct' && isAlertQuestion(detect)) {
-      await say(chatId, st, await alertStatusText(), isPrivate ? undefined : msg.message_id);
+      const c = await alertStatusText();
+      await say(chatId, st, c.text, isPrivate ? undefined : msg.message_id, { entities: c.entities, noPreview: true });
       return;
     }
     // «который час»: отвечаем кодом по времени бота (Киев), а не угадываем моделью

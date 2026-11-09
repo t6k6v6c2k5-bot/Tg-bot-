@@ -128,10 +128,13 @@ async function exec(ctx, key, cmd, message) {
         st.settings.alerts = on;
         save();
         await reply(on ? '🚨 Тревоги включены: буду писать о тревоге, отбое и «где летит» по области из открытых источников.' : 'Тревоги в этом чате выключены.');
-        if (on) await reply(await alertStatusText()); // сразу показываем, что сейчас, чтобы не пропустить уже идущую тревогу
+        if (on) { const c = await alertStatusText(); await say(chatId, st, c.text, message.message_id, { entities: c.entities, noPreview: true }); } // сразу показываем, что сейчас, чтобы не пропустить уже идущую тревогу
         return;
       }
-      await reply(await alertStatusText());
+      {
+        const c = await alertStatusText();
+        await say(chatId, st, c.text, message.message_id, { entities: c.entities, noPreview: true });
+      }
       break;
     }
     case 'hardcore': {

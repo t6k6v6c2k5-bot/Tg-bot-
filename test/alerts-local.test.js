@@ -15,7 +15,7 @@ const { app } = await import('../src/respond.js');
 
 const mock = () => {
   const sent = [];
-  app.telegram = { sendMessage: async (id, t) => (sent.push([id, t]), { message_id: sent.length + 500 }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+  app.telegram = { sendMessage: async (id, t, o) => (sent.push([id, t, o]), { message_id: sent.length + 500 }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
   app.id = 1;
   return sent;
 };
@@ -39,10 +39,10 @@ test('«терміново в укриття / коридор» в местно�
     oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 2000, 'Терміново в укриття! Коридоримся!'),
   };
   await alertsTick(t0 + 40_000, mkFetch(pages));
-  const mine = sent.filter((x) => x[0] === -610).map((x) => x[1]);
-  assert.equal(mine.length, 1);
-  assert.match(mine[0], /УВАГА! Щось летить на Кривий Ріг/);
-  assert.match(mine[0], /t\.me\/oborona_kr\/2/);
+  const got = sent.filter((x) => x[0] === -610);
+  assert.equal(got.length, 1);
+  assert.match(got[0][1], /^🚨 УВАГА\n📍 Кривий Ріг\nТерміново в укриття! Коридоримся!/);
+  assert.ok(got[0][2].entities.some((e) => e.type === 'text_link' && e.url === 'https://t.me/oborona_kr/2')); // источник — ссылка
 });
 
 test('«чисто / вийшов за межі» пересылаем только пока тревога в городе идёт', async () => {
@@ -65,6 +65,6 @@ test('«чисто / вийшов за межі» пересылаем толь�
   assert.match(mine()[0], /ТРИВОГА/);
   pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 4, t0 + 63_000, 'Реактивний вийшов за межі області, без загроз для Кривого Рогу') };
   await alertsTick(t0 + 95_000, mkFetch(pages)); // тревога идёт: это важное обновление
-  assert.match(mine().at(-1), /^ℹ️ Реактивний вийшов за межі/);
+  assert.match(mine().at(-1), /^ℹ️ ОНОВЛЕННЯ\nРеактивний вийшов за межі/);
   assert.doesNotMatch(mine().at(-1), /УВАГА/);
 });

@@ -32,7 +32,7 @@ test('закреп всегда актуален: тревога и отбой �
 
   // 1) подключили чат: сразу закрепляется «тревоги нет» (тихо)
   await alertsTick(t0, mkFetch(pages));
-  assert.match(sends()[0][2], /зараз тривоги немає/);
+  assert.match(sends()[0][2], /ТРИВОГИ НЕМАЄ/);
   const idle = sends()[0][1];
   assert.deepEqual(log.find((x) => x[0] === 'pin'), ['pin', idle, true]); // без звонка
   assert.equal(st.alertStatus.active, false);

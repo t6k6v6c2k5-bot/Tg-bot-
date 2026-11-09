@@ -231,14 +231,52 @@ async function forEachChat(fn) {
 }
 
 const cityName = () => config.alertPriority[0] || 'наше місто';
-/** Тревога: ракеты → срочно в укрытие; БпЛА и остальное → без паники, просто причина */
-export const startText = (reason = null) => {
-  if (reason?.missile) return `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}!\n🚀 Ракетна загроза: терміново в укриття!\n${reason.text}`;
-  return `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}.\nПричина: ${reason ? reason.text : 'уточнюється, слідкуйте за повідомленнями.'}`;
-};
-export const clearText = (mins) => `✅ ВІДБІЙ повітряної тривоги у ${label()}.${mins >= 1 ? ` Тривога тривала ${mins >= 90 ? `${Math.floor(mins / 60)} год ${mins % 60} хв` : `${mins} хв`}.` : ''}`;
 
-export const idleText = () => `🟢 У ${label()} зараз тривоги немає.`;
+// ---------- оформление: «карточки» (заголовок жирным, суть в цитате, источник ссылкой) ----------
+const hhmm = (ts) => new Intl.DateTimeFormat('uk-UA', { timeZone: config.outageTz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ts);
+
+/** Собирает текст и entities из строк: {bold}, {quote}, {source:{name,link,time}} или {text} */
+export function card(lines) {
+  let text = '';
+  const entities = [];
+  lines
+    .filter(Boolean)
+    .forEach((l, i) => {
+      if (i) text += '\n';
+      if (l.bold) {
+        entities.push({ type: 'bold', offset: text.length, length: l.bold.length });
+        text += l.bold;
+      } else if (l.quote) {
+        entities.push({ type: 'blockquote', offset: text.length, length: l.quote.length });
+        text += l.quote;
+      } else if (l.source) {
+        text += '📡 ';
+        entities.push({ type: 'text_link', offset: text.length, length: l.source.name.length, url: l.source.link });
+        text += l.source.name + (l.source.time ? ` · ${l.source.time}` : '');
+      } else text += l.text;
+    });
+  return { text, entities };
+}
+const place = () => ({ text: `📍 ${cityName()}` });
+const sourceLine = (p) => ({ source: { name: p.channel || p.link.split('/')[3], link: p.link, time: hhmm(p.ts) } });
+
+/** Тревога: ракеты → срочно в укрытие; БпЛА и остальное → без паники, просто причина */
+export const startText = (reason = null, now = Date.now()) =>
+  card([
+    { bold: '🚨 ПОВІТРЯНА ТРИВОГА' },
+    place(),
+    reason?.missile && { bold: '🚀 Ракетна загроза: терміново в укриття!' },
+    { quote: `Причина: ${reason ? reason.text : 'уточнюється, слідкуйте за повідомленнями.'}` },
+    { text: `🕐 з ${hhmm(now)}` },
+  ]);
+export const clearText = (mins) => card([{ bold: '✅ ВІДБІЙ ТРИВОГИ' }, place(), mins >= 1 && { text: `⏱ тривала ${mins >= 90 ? `${Math.floor(mins / 60)} год ${mins % 60} хв` : `${mins} хв`}` }]);
+export const idleText = () => card([{ bold: '🟢 ТРИВОГИ НЕМАЄ' }, place()]);
+
+/** Сообщение «где летит» одним из видов: ракеты, срочно, обновление, обычное */
+export function flightCard(p) {
+  const head = p.missile ? [{ bold: '🚀 РАКЕТНА ЗАГРОЗА' }, place(), { bold: '‼️ Терміново в укриття!' }] : p.urgent ? [{ bold: '🚨 УВАГА' }, place()] : p.update ? [{ bold: 'ℹ️ ОНОВЛЕННЯ' }] : [{ bold: priorityRe().test(p.text) ? '🛩 РУХ ПОБЛИЗУ' : '🛩 РУХ ПО ОБЛАСТІ' }];
+  return card([...head, { quote: p.text }, sourceLine(p)]);
+}
 
 /**
  * Закреплённое сообщение чата всегда показывает актуальное состояние: «ТРИВОГА» или «ВІДБІЙ / тривоги немає».
@@ -256,8 +294,8 @@ async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), init
   if (active && old && !old.active) ids.add(old.id); // новая тревога убирает старый отбой
   st.alertMsgs = [];
   await wipe(chatId, st, [...ids]);
-  const text = active ? startText(reason) : initial ? idleText() : clearText(mins);
-  const sent = await say(chatId, st, text);
+  const msg = active ? startText(reason, now) : initial ? idleText() : clearText(mins);
+  const sent = await say(chatId, st, msg.text, undefined, { entities: msg.entities, noPreview: true });
   if (active) track(st, sent, 'start');
   st.alertStatus = { id: sent.message_id, active, at: now };
   // тревога и отбой закрепляются с уведомлением; «просто нет тревоги» при подключении чата — тихо
@@ -378,8 +416,8 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
         } else if (st.alertLog.length >= 4 * HOURLY_CAP) continue; // защита от потока в массированную атаку
         st.alertSent.push({ at: now, text: p.text });
         try {
-          const head = p.missile ? '🚨🚨 УВАГА! Ракетна загроза: терміново в укриття!\n\n' : p.urgent ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n` : p.update ? 'ℹ️ ' : '🛩 ';
-          const sent = await say(chatId, st, `${head}${p.text}\n\nДжерело: ${p.link}`, undefined, { noPreview: true });
+          const m = flightCard(p);
+          const sent = await say(chatId, st, m.text, undefined, { entities: m.entities, noPreview: true });
           track(st, sent, 'flight');
         } catch (e) {
           console.error('[alerts]', chatId, e.message);
@@ -395,7 +433,7 @@ export function startAlerts() {
   setInterval(() => alertsTick().catch((e) => console.error('[alerts]', e.message)), 30_000);
 }
 
-/** Текст для /тревога и вопроса «есть тревога?»: состояние по городу + последний пост про него */
+/** Карточка для /тревога и вопроса «есть тревога?»: состояние по городу + последний пост про него */
 export async function alertStatusText(fetchFn = fetch, now = Date.now()) {
   load();
   const pages = await fetchPages(fetchFn);
@@ -405,26 +443,30 @@ export async function alertStatusText(fetchFn = fetch, now = Date.now()) {
     .filter((p) => p.ev)
     .sort((a, b) => b.ts - a.ts)[0];
   let head;
-  if (area) head = area.ev === 'start' ? `🚨 У ${label()} зараз ПОВІТРЯНА ТРИВОГА.` : `🟢 У ${label()} зараз тривоги немає.`;
+  if (area) head = [{ bold: area.ev === 'start' ? '🚨 ПОВІТРЯНА ТРИВОГА' : '🟢 ТРИВОГИ НЕМАЄ' }, place(), area.ev === 'start' && { text: `🕐 з ${hhmm(area.ts)}` }];
   else {
     // по городу данных нет — честно говорим и показываем область
     const oblast = await fetchAlertState(fetchFn);
-    head = oblast === null ? `⚠️ Не вдалося дізнатися стан тривоги по ${label()} (джерела недоступні). Орієнтуйтесь на сирени.` : `ℹ️ По ${label()} даних зараз немає. У ${config.alertRegion.replace(/ька область$/, 'ькій області')} ${oblast ? 'ТРИВОГА' : 'тривоги немає'}.`;
+    head = [
+      { bold: oblast === null ? '⚠️ СТАН НЕВІДОМИЙ' : 'ℹ️ ДАНИХ ПО МІСТУ НЕМАЄ' },
+      place(),
+      { text: oblast === null ? 'Джерела недоступні, орієнтуйтесь на сирени.' : `У ${config.alertRegion.replace(/ька область$/, 'ькій області')}: ${oblast ? 'тривога' : 'тривоги немає'}.` },
+    ];
   }
-  let tail = '';
+  let tail = [];
   try {
     const re = keywordRe();
     const posts = Object.entries(pages)
       .filter(([ch]) => config.alertChannels.includes(ch))
-      .flatMap(([, ps]) => ps)
+      .flatMap(([ch, ps]) => ps.map((p) => ({ ...p, channel: ch })))
       .filter((p) => !areaEvent(p.text) && re.test(p.text) && now - p.ts < 3 * H)
       .sort((a, b) => b.ts - a.ts);
     const last = posts.find((p) => priorityRe().test(p.text)) || posts[0];
-    if (last) tail = `\n\n🛩 Останнє (${Math.max(1, Math.round((now - last.ts) / 60_000))} хв тому):\n${last.text}`;
+    if (last) tail = [{ text: `🛩 Останнє · ${Math.max(1, Math.round((now - last.ts) / 60_000))} хв тому` }, { quote: last.text }, sourceLine(last)];
   } catch (e) {
     console.warn('[alerts] статус:', e.message);
   }
-  return `${head}${tail}`;
+  return card([...head, ...tail]);
 }
 
 export const isAlertQuestion = (text) => {

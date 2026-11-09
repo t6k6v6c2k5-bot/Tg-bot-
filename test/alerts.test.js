@@ -50,7 +50,7 @@ test('тревога по району объявляется, область н
   await alertsTick(t0 + 31_000, mkFetch(pages));
   const mine = () => sent.filter((x) => x[0] === -600).map((x) => x[1]);
   assert.equal(sent.some((x) => x[0] === -601), false); // чат без тревог ничего не получает
-  assert.match(mine()[0], /ПОВІТРЯНА ТРИВОГА у Кривому Розі/);
+  assert.match(mine()[0], /ПОВІТРЯНА ТРИВОГА\n📍 Кривий Ріг/);
   assert.doesNotMatch(mine()[0], /област/i);
 
   await alertsTick(t0 + 62_000, mkFetch(pages)); // тот же пост — тишина
@@ -58,7 +58,7 @@ test('тревога по району объявляется, область н
 
   pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 3, t0 + 70_000, END) };
   await alertsTick(t0 + 93_000, mkFetch(pages));
-  assert.match(mine().at(-1), /ВІДБІЙ повітряної тривоги у Кривому Розі/);
+  assert.match(mine().at(-1), /ВІДБІЙ ТРИВОГИ\n📍 Кривий Ріг/);
   assert.equal(off.settings.alerts, undefined);
 });
 
@@ -76,25 +76,26 @@ test('где летит: БпЛА на город — обычное сообщ�
   await alertsTick(t0 + 31_000, mkFetch(pages));
   const mine = sent.filter((x) => x[0] === -602);
   assert.equal(mine.length, 1);
-  assert.match(mine[0][1], /^🛩 Дніпропетровщина: БпЛА курсом на Кривий Ріг/); // БпЛА — без паники, просто что и куда
+  assert.match(mine[0][1], /^🛩 РУХ ПОБЛИЗУ\nДніпропетровщина: БпЛА курсом на Кривий Ріг/); // БпЛА — без паники, просто что и куда
   assert.doesNotMatch(mine[0][1], /УВАГА|укритт/);
   assert.doesNotMatch(mine[0][1], /Alerts Live/);
-  assert.match(mine[0][1], /Джерело: https:\/\/t\.me\/kpszsu\/3/);
+  assert.ok(mine[0][2].entities.some((e) => e.type === 'text_link' && e.url === 'https://t.me/kpszsu/3')); // источник — кликабельная ссылка в карточке
+  assert.ok(mine[0][2].entities.some((e) => e.type === 'bold') && mine[0][2].entities.some((e) => e.type === 'blockquote'));
   assert.deepEqual(mine[0][2].link_preview_options, { is_disabled: true });
 });
 
 test('статус: по городу, а не по области', async () => {
   const t0 = Date.now();
   let pages = { oborona_kr: post('oborona_kr', 5, t0 - 60_000, START), kpszsu: post('kpszsu', 9, t0 - 5 * 60_000, 'Дніпропетровщина: БпЛА курсом на Павлоград.') };
-  let t = await alertStatusText(mkFetch(pages, false)); // область говорит «нет», район — тревога
-  assert.match(t, /У Кривому Розі зараз ПОВІТРЯНА ТРИВОГА/);
+  let t = (await alertStatusText(mkFetch(pages, false))).text; // область говорит «нет», район — тревога
+  assert.match(t, /^🚨 ПОВІТРЯНА ТРИВОГА\n📍 Кривий Ріг/);
   assert.doesNotMatch(t, /Дніпропетровськ/);
   assert.match(t, /Павлоград/);
   pages = { oborona_kr: post('oborona_kr', 6, t0 - 60_000, END) };
-  t = await alertStatusText(mkFetch(pages, true));
-  assert.match(t, /У Кривому Розі зараз тривоги немає/);
-  t = await alertStatusText(mkFetch({}, true)); // по городу данных нет: честно говорим
-  assert.match(t, /По Кривому Розі даних зараз немає/);
+  t = (await alertStatusText(mkFetch(pages, true))).text;
+  assert.match(t, /^🟢 ТРИВОГИ НЕМАЄ\n📍 Кривий Ріг/);
+  t = (await alertStatusText(mkFetch({}, true))).text; // по городу данных нет: честно говорим
+  assert.match(t, /ДАНИХ ПО МІСТУ НЕМАЄ/);
 });
 
 test('распознавание вопроса и фильтры', () => {
@@ -106,9 +107,9 @@ test('распознавание вопроса и фильтры', () => {
   assert.equal(isThreatPost('БпЛА курсом на Кривий Ріг'), true);
   assert.equal(similar('Дніпропетровщина: БпЛА курсом на Кривий Ріг', 'БпЛА курсом на Кривий Ріг із заходу'), true);
   assert.equal(similar('БпЛА курсом на Кривий Ріг', 'Реактивний від Солоного на захід'), false);
-  assert.match(startText(), /у Кривому Розі/);
-  assert.doesNotMatch(startText(), /укритт/); // не пугаем: сирена сама по себе не значит прямую угрозу
-  assert.match(clearText(95), /1 год 35 хв/);
+  assert.match(startText().text, /📍 Кривий Ріг/);
+  assert.doesNotMatch(startText().text, /укритт/); // не пугаем: сирена сама по себе не значит прямую угрозу
+  assert.match(clearText(95).text, /1 год 35 хв/);
 });
 
 test('прямая угроза и движение рядом различаются: «транзит» не кричит УВАГА', async () => {
@@ -132,7 +133,7 @@ test('прямая угроза и движение рядом различаю�
   await alertsTick(t0 + 31_000, mkFetch(pages));
   const mine = sent.filter((x) => x[0] === -603).map((x) => x[1]);
   assert.equal(mine.length, 1);
-  assert.match(mine[0], /^🛩 Рух реактивного/); // обычное сообщение, не «УВАГА»
+  assert.match(mine[0], /^🛩 РУХ ПОБЛИЗУ\nРух реактивного/); // обычное сообщение, не «УВАГА»
   assert.doesNotMatch(mine[0], /УВАГА/);
 });
 
@@ -147,12 +148,12 @@ test('ракеты — срочно в укрытие, БпЛА — без па�
   const pages = { kpszsu: [{ id: 2, ts: now - 60_000, text: 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.', link: 'x' }], oborona_kr: [] };
   const r = reasonFrom(pages, now);
   assert.equal(r.missile, false);
-  assert.equal(startText(r), '🚨 ПОВІТРЯНА ТРИВОГА у Кривому Розі.\nПричина: Дніпропетровщина: БпЛА курсом на Кривий Ріг.');
-  assert.doesNotMatch(startText(r), /укритт/);
-  assert.equal(startText(null), '🚨 ПОВІТРЯНА ТРИВОГА у Кривому Розі.\nПричина: уточнюється, слідкуйте за повідомленнями.');
+  assert.match(startText(r).text, /^🚨 ПОВІТРЯНА ТРИВОГА\n📍 Кривий Ріг\nПричина: Дніпропетровщина: БпЛА курсом на Кривий Ріг\.\n🕐 з \d\d:\d\d$/);
+  assert.doesNotMatch(startText(r).text, /укритт/);
+  assert.match(startText(null).text, /Причина: уточнюється, слідкуйте за повідомленнями\./);
   const m = reasonFrom({ kpszsu: [{ id: 3, ts: now - 1000, text: 'Балістика на Кривий Ріг!', link: 'x' }, { id: 2, ts: now - 5000, text: 'БпЛА курсом на Кривий Ріг', link: 'x' }] }, now);
   assert.equal(m.missile, true);
-  assert.match(startText(m), /🚀 Ракетна загроза: терміново в укриття!/);
+  assert.match(startText(m).text, /🚀 Ракетна загроза: терміново в укриття!/);
 
   _resetAlerts();
   const sent = [];
@@ -173,5 +174,5 @@ test('ракеты — срочно в укрытие, БпЛА — без па�
   // ракеты: отдельное срочное сообщение
   p = { ...p, kpszsu: p.kpszsu + post('kpszsu', 3, t0 + 40_000, 'Балістика на Кривий Ріг!') };
   await alertsTick(t0 + 62_000, mkFetch(p));
-  assert.match(mine().at(-1), /^🚨🚨 УВАГА! Ракетна загроза: терміново в укриття!/);
+  assert.match(mine().at(-1), /^🚀 РАКЕТНА ЗАГРОЗА\n📍 Кривий Ріг\n‼️ Терміново в укриття!/);
 });
