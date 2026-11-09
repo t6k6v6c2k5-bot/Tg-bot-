@@ -9,7 +9,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'al-'));
 process.env.ALERT_CHANNELS = 'kpszsu,oborona_kr';
 process.env.ALERT_AREA_CHANNELS = 'oborona_kr';
 
-const { parseChannel, cleanPost, isDirectThreat, areaEvent, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
+const { parseChannel, cleanPost, isDirectThreat, isMissileThreat, reasonFrom, areaEvent, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 
@@ -62,7 +62,7 @@ test('тревога по району объявляется, область н
   assert.equal(off.settings.alerts, undefined);
 });
 
-test('где летит: про город срочно, ссылки без превью-карточки, подписи каналов убраны', async () => {
+test('где летит: БпЛА на город — обычное сообщение, ссылки без превью-карточки, подписи каналов убраны', async () => {
   _resetAlerts();
   const sent = [];
   app.telegram = { sendMessage: async (id, t, o) => (sent.push([id, t, o]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
@@ -76,7 +76,8 @@ test('где летит: про город срочно, ссылки без п�
   await alertsTick(t0 + 31_000, mkFetch(pages));
   const mine = sent.filter((x) => x[0] === -602);
   assert.equal(mine.length, 1);
-  assert.match(mine[0][1], /УВАГА! Щось летить на Кривий Ріг/);
+  assert.match(mine[0][1], /^🛩 Дніпропетровщина: БпЛА курсом на Кривий Ріг/); // БпЛА — без паники, просто что и куда
+  assert.doesNotMatch(mine[0][1], /УВАГА|укритт/);
   assert.doesNotMatch(mine[0][1], /Alerts Live/);
   assert.match(mine[0][1], /Джерело: https:\/\/t\.me\/kpszsu\/3/);
   assert.deepEqual(mine[0][2].link_preview_options, { is_disabled: true });
@@ -133,4 +134,44 @@ test('прямая угроза и движение рядом различаю�
   assert.equal(mine.length, 1);
   assert.match(mine[0], /^🛩 Рух реактивного/); // обычное сообщение, не «УВАГА»
   assert.doesNotMatch(mine[0], /УВАГА/);
+});
+
+test('ракеты — срочно в укрытие, БпЛА — без паники; в тревоге пишем причину', async () => {
+  assert.equal(isMissileThreat('Балістика на Кривий Ріг!'), true);
+  assert.equal(isMissileThreat('Крилаті ракети на Дніпропетровщину'), true);
+  assert.equal(isMissileThreat('Ракета курсом на Нікополь'), false); // соседний город — не наш случай
+  assert.equal(isMissileThreat('Реактивні БпЛА на Кривий Ріг'), false);
+
+  // причина тревоги: свежий пост об угрозе
+  const now = Date.now();
+  const pages = { kpszsu: [{ id: 2, ts: now - 60_000, text: 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.', link: 'x' }], oborona_kr: [] };
+  const r = reasonFrom(pages, now);
+  assert.equal(r.missile, false);
+  assert.equal(startText(r), '🚨 ПОВІТРЯНА ТРИВОГА у Кривому Розі.\nПричина: Дніпропетровщина: БпЛА курсом на Кривий Ріг.');
+  assert.doesNotMatch(startText(r), /укритт/);
+  assert.equal(startText(null), '🚨 ПОВІТРЯНА ТРИВОГА у Кривому Розі.\nПричина: уточнюється, слідкуйте за повідомленнями.');
+  const m = reasonFrom({ kpszsu: [{ id: 3, ts: now - 1000, text: 'Балістика на Кривий Ріг!', link: 'x' }, { id: 2, ts: now - 5000, text: 'БпЛА курсом на Кривий Ріг', link: 'x' }] }, now);
+  assert.equal(m.missile, true);
+  assert.match(startText(m), /🚀 Ракетна загроза: терміново в укриття!/);
+
+  _resetAlerts();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t) => (sent.push([id, t]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+  const st = chat(-604);
+  st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 };
+  const t0 = Date.now();
+  let p = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый'), oborona_kr: post('oborona_kr', 1, t0 - 1000, END) };
+  await alertsTick(t0, mkFetch(p));
+  p = { kpszsu: p.kpszsu + post('kpszsu', 2, t0 + 500, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.'), oborona_kr: p.oborona_kr + post('oborona_kr', 2, t0 + 1000, START) };
+  await alertsTick(t0 + 31_000, mkFetch(p));
+  const mine = () => sent.filter((x) => x[0] === -604).map((x) => x[1]);
+  const alarm = mine().find((t) => /ПОВІТРЯНА ТРИВОГА/.test(t));
+  assert.match(alarm, /Причина: Дніпропетровщина: БпЛА курсом на Кривий Ріг/);
+  assert.doesNotMatch(alarm, /укритт/);
+
+  // ракеты: отдельное срочное сообщение
+  p = { ...p, kpszsu: p.kpszsu + post('kpszsu', 3, t0 + 40_000, 'Балістика на Кривий Ріг!') };
+  await alertsTick(t0 + 62_000, mkFetch(p));
+  assert.match(mine().at(-1), /^🚨🚨 УВАГА! Ракетна загроза: терміново в укриття!/);
 });

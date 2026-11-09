@@ -149,6 +149,26 @@ export function isDirectThreat(text) {
   return DIRECT.test(text);
 }
 
+// Ракеты — срочно в укрытие; БпЛА/дроны — без паники, просто что и куда летит.
+const MISSILE = /ракет|балістик|крилат|кинджал|калібр|іскандер|(?<![а-яa-z])х-\d|(?<![а-яa-z])кх-\d|циркон|онікс/i;
+const OBLAST = /дніпропетровщин|дніпропетровськ/i;
+/** Ракетная угроза нашему городу или области в целом (а не соседнему городу) */
+export const isMissileThreat = (text, local = false) => MISSILE.test(text) && !CLEAR.test(text) && (priorityRe().test(text) || OBLAST.test(text) || local);
+
+const clip = (t, n) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
+/** Причина тревоги: самый свежий пост об угрозе по городу/области за последние 30 минут */
+export function reasonFrom(pages, now = Date.now()) {
+  if (!pages) return null;
+  const re = keywordRe();
+  const posts = config.alertChannels
+    .flatMap((ch) => (pages[ch] || []).map((p) => ({ ...p, local: config.alertLocal.includes(ch.toLowerCase()) })))
+    .filter((p) => now - p.ts < 30 * 60_000 && !areaEvent(p.text) && isThreatPost(p.text) && (re.test(p.text) || (p.local && isUrgentPost(p.text))))
+    .sort((a, b) => b.ts - a.ts);
+  const missile = posts.find((p) => isMissileThreat(p.text, p.local));
+  const pick = missile || posts[0];
+  return pick ? { text: clip(pick.text.replace(/\s+/g, ' '), 220), missile: Boolean(missile) } : null;
+}
+
 const tokens = (t) => new Set(t.toLowerCase().match(/[а-яіїєґa-z0-9']{3,}/g) || []);
 /** Похожие сообщения из разных каналов об одном и том же: берём первое (кто быстрее написал), остальные пропускаем */
 export function similar(a, b) {
@@ -211,7 +231,11 @@ async function forEachChat(fn) {
 }
 
 const cityName = () => config.alertPriority[0] || 'наше місто';
-export const startText = () => `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}!`; // без «негайно в укриття»: сирена сама по собі не означає прямої загрози, людей не лякаємо
+/** Тревога: ракеты → срочно в укрытие; БпЛА и остальное → без паники, просто причина */
+export const startText = (reason = null) => {
+  if (reason?.missile) return `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}!\n🚀 Ракетна загроза: терміново в укриття!\n${reason.text}`;
+  return `🚨 ПОВІТРЯНА ТРИВОГА у ${label()}.\nПричина: ${reason ? reason.text : 'уточнюється, слідкуйте за повідомленнями.'}`;
+};
 export const clearText = (mins) => `✅ ВІДБІЙ повітряної тривоги у ${label()}.${mins >= 1 ? ` Тривога тривала ${mins >= 90 ? `${Math.floor(mins / 60)} год ${mins % 60} хв` : `${mins} хв`}.` : ''}`;
 
 export const idleText = () => `🟢 У ${label()} зараз тривоги немає.`;
@@ -222,7 +246,7 @@ export const idleText = () => `🟢 У ${label()} зараз тривоги не
  * @param {boolean} active  тревога идёт
  * @param {{mins?:number, now?:number, initial?:boolean}} o  initial — просто привести закреп в соответствие (без «отбоя» из ниоткуда)
  */
-async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), initial = false } = {}) {
+async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), initial = false, reason = null } = {}) {
   const old = st.alertStatus;
   if (old?.id) await unpin(chatId, old.id);
   if (st.alertPin && st.alertPin !== old?.id) await unpin(chatId, st.alertPin);
@@ -232,7 +256,7 @@ async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), init
   if (active && old && !old.active) ids.add(old.id); // новая тревога убирает старый отбой
   st.alertMsgs = [];
   await wipe(chatId, st, [...ids]);
-  const text = active ? startText() : initial ? idleText() : clearText(mins);
+  const text = active ? startText(reason) : initial ? idleText() : clearText(mins);
   const sent = await say(chatId, st, text);
   if (active) track(st, sent, 'start');
   st.alertStatus = { id: sent.message_id, active, at: now };
@@ -241,15 +265,15 @@ async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), init
   if (await quiet(() => app.telegram.pinChatMessage(chatId, sent.message_id, { disable_notification: !notify }), 'закрепить')) st.alertPin = sent.message_id;
 }
 
-const announceStart = () => forEachChat((chatId, st) => postStatus(chatId, st, true));
+const announceStart = (reason) => forEachChat((chatId, st) => postStatus(chatId, st, true, { reason }));
 const announceClear = (mins, now) => forEachChat((chatId, st) => postStatus(chatId, st, false, { mins, now }));
 
 /** Привести закреп в каждом чате в соответствие с текущим состоянием (новый чат, перезапуск, пропущенное событие) */
-async function ensureStatus(now) {
+async function ensureStatus(now, pages = null) {
   const active = S.active === true;
   await forEachChat(async (chatId, st) => {
     if (st.alertStatus && st.alertStatus.active === active) return;
-    await postStatus(chatId, st, active, { initial: true, now });
+    await postStatus(chatId, st, active, { initial: true, now, reason: active ? reasonFrom(pages, now) : null });
   });
 }
 
@@ -290,7 +314,7 @@ async function processArea(pages, now) {
     if (wasNull || now - e.ts > FRESH_MS) continue;
     console.log(`[alerts] ${active ? 'ТРИВОГА' : 'ОТБОЙ'} в ${label()}, чатов: ${subscribed().length}`);
     persist();
-    await (active ? announceStart() : announceClear(Math.max(0, mins), now));
+    await (active ? announceStart(reasonFrom(pages, now)) : announceClear(Math.max(0, mins), now));
   }
   if (baseline && S.active === null) S.active = false; // постов по району не нашли: считаем, что тревоги нет
   persist();
@@ -317,7 +341,10 @@ function pickFlightPosts(pages, now) {
       }
       const urgentLocal = local && isUrgentPost(p.text); // «в укриття» в местном канале = летит на наш город
       if (!re.test(p.text) && !urgentLocal) continue;
-      found.push({ ...p, channel: ch, priority: urgentLocal || (priorityRe().test(p.text) && isDirectThreat(p.text)) });
+      const missile = isMissileThreat(p.text, local);
+      // срочный «УВАГА» только для ракет, взрывов/прилётов и призыва укрыться из местного канала; БпЛА — обычное сообщение без паники
+      const urgent = missile || urgentLocal || (priorityRe().test(p.text) && IMPACT.test(p.text));
+      found.push({ ...p, channel: ch, priority: urgent || (priorityRe().test(p.text) && isDirectThreat(p.text)), urgent, missile });
     }
   }
   persist();
@@ -339,7 +366,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
     lastChannelAt = now;
     const pages = await fetchPages(fetchFn);
     await processArea(pages, now);
-    await ensureStatus(now);
+    await ensureStatus(now, pages);
     for (const p of pickFlightPosts(pages, now)) {
       for (const [chatId, st] of subscribed()) {
         st.alertLog = (st.alertLog || []).filter((t) => now - t < H);
@@ -351,7 +378,7 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
         } else if (st.alertLog.length >= 4 * HOURLY_CAP) continue; // защита от потока в массированную атаку
         st.alertSent.push({ at: now, text: p.text });
         try {
-          const head = p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n` : p.update ? 'ℹ️ ' : '🛩 ';
+          const head = p.missile ? '🚨🚨 УВАГА! Ракетна загроза: терміново в укриття!\n\n' : p.urgent ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n` : p.update ? 'ℹ️ ' : '🛩 ';
           const sent = await say(chatId, st, `${head}${p.text}\n\nДжерело: ${p.link}`, undefined, { noPreview: true });
           track(st, sent, 'flight');
         } catch (e) {
