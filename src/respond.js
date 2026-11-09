@@ -120,7 +120,7 @@ export async function respond(chatId, st, { mode, replyTo, note = '' }) {
             context: transcript(st.history, 8),
             direct: direct && !abusive,
             reject: (t) => bodyJokeAboutPerson(t, st) || usesDiagnosisAsSlur(t) || repetition(t, st).length > 0,
-            tier: needSmart || (direct && config.smartDirect) ? 'smart' : 'fast',
+            tier: needSmart || config.smartDirect ? 'smart' : 'fast',
             high: direct,
             maxTokens: direct ? 160 : 70,
             parseOpts: popts,
@@ -130,7 +130,7 @@ export async function respond(chatId, st, { mode, replyTo, note = '' }) {
             prompt,
             maxTokens: direct ? 500 : 100,
             high: direct,
-            tier: needSmart || (direct && config.smartDirect) ? 'smart' : 'fast',
+            tier: needSmart || config.smartDirect ? 'smart' : 'fast',
           });
     let res = await ask();
     if (!res) {
