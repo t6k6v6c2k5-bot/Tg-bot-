@@ -131,13 +131,18 @@ const THREAT = /бпла|безпілот|дрон|шахед|геран|моп�
 const END = /відбій|відбо[юя]/i;
 const SOFT = /чисто|без\s+загроз|вийшов\s+за\s+меж|вийшли\s+за\s+меж|залишив\s+(?:меж|област)|загроза\s+минула|не\s+загрожу|не\s+зафіксован/i;
 const CLEAR = new RegExp(`${END.source}|${SOFT.source}`, 'i');
-export const isUpdatePost = (text) => SOFT.test(text) && !END.test(text);
+// Не оповещения: сборы денег, реклама, длинные тексты со ссылками и номерами карт. Сообщение об угрозе короткое и без ссылок.
+const AD = /збір|збору|збірк|збираємо|зібрати|скинутись|скиньтесь|донат|реквізит|monobank|монобанк|send\.mono|privat24|внесок|внески|поповни|тепловізор|обладнання\s+для|підтримайте|благодійн|волонтер|на\s+потреби/i;
+const CARD = /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/;
+export const isNoise = (text) => text.length > 350 || /https?:\/\//i.test(text) || CARD.test(text) || AD.test(text);
+
+export const isUpdatePost = (text) => SOFT.test(text) && !END.test(text) && !isNoise(text);
 // Призывы укрыться: в местном канале это значит, что что-то летит на город
 const URGENT = /(?<![а-яіїєґa-z])(?:терміново|негайно|срочно|швидко\s+в|ховайтесь|ховайся|сховайтесь|спускайтесь|коридор\p{L}*|в\s*укритт\p{L}*|до\s+укритт\p{L}*|на\s+укритт\p{L}*|в\s*укрыт\p{L}*|вибух\p{L}*|приліт\p{L}*|прильот\p{L}*|гучн\p{L}*|працю\p{L}*\s+ппо|ппо\s+працю\p{L}*)/iu;
 // «Може бути гучно» — прогноз, а не событие
 const MAYBE_LOUD = /(?:може|можуть|можливо)\s+бути\s+гучн/i;
-export const isUrgentPost = (text) => URGENT.test(text.replace(MAYBE_LOUD, '')) && !CLEAR.test(text);
-export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text.replace(MAYBE_LOUD, ''))) && !CLEAR.test(text);
+export const isUrgentPost = (text) => URGENT.test(text.replace(MAYBE_LOUD, '')) && !CLEAR.test(text) && !isNoise(text);
+export const isThreatPost = (text) => (THREAT.test(text) || URGENT.test(text.replace(MAYBE_LOUD, ''))) && !CLEAR.test(text) && !isNoise(text);
 
 // Прямая угроза городу или просто движение рядом? «Транзит», «повз», «жовтий/жовтогарячий» — не повод кричать «УВАГА».
 const TRANSIT = /транзит|повз|поблизу|вздовж|залишає|не\s+загрожу|на\s+(?:захід|схід|північ|південь)\s+від|жовтогаряч|жовтий|жовта/i;
@@ -488,7 +493,7 @@ export async function alertStatusText(fetchFn = fetch, now = Date.now()) {
     const posts = Object.entries(pages)
       .filter(([ch]) => config.alertChannels.includes(ch))
       .flatMap(([ch, ps]) => ps.map((p) => ({ ...p, channel: ch })))
-      .filter((p) => !areaEvent(p.text) && re.test(p.text) && now - p.ts < 3 * H)
+      .filter((p) => !areaEvent(p.text) && re.test(p.text) && !isNoise(p.text) && now - p.ts < 3 * H)
       .sort((a, b) => b.ts - a.ts);
     const last = posts.find((p) => priorityRe().test(p.text)) || posts[0];
     if (last) tail = [{ text: `🛩 Останнє · ${Math.max(1, Math.round((now - last.ts) / 60_000))} хв тому` }, { quote: last.text }, sourceLine(last)];

@@ -52,3 +52,26 @@ test('срочная карточка по бандероли на Апосто�
   assert.equal(mine.length, 1);
   assert.match(mine[0], /^🚀 БАНДЕРОЛЬ\n📍 Кривий Ріг\n‼️ Терміново в укриття!\nБандероль курсом на Апостолове!/);
 });
+
+test('сборы денег и реклама не публикуются', async () => {
+  const { isThreatPost, isNoise } = await import('../src/alerts.js');
+  const fundraiser = '🫡🫡 на тепловізори та обладнання для захисників неба Криворіжжя👀\n\n💁‍♀️Друзі, до нас звернулись хлопці які безпосередньо працюють по цілям над Кривбасом. Для ефективної роботи їм необхідні ще два тепловізори та ще деякі ніштячки\n\n🤝Ми можемо полегшити нашим тіграм виявлення ворожих цілей\n\nТвій сППОкій у твоєму гаманці твоїх руках✌️\n\n⛳️Ціль збору: 250 000 грн\n\n🫙Банка🔽\nhttps://send.monobank.ua/jar/6zfGJnX8cL\n\n🏦Карта🔽\n4874 1000 3417 5680';
+  assert.equal(isNoise(fundraiser), true);
+  assert.equal(isThreatPost(fundraiser), false);
+  assert.equal(isNoise('Збір на дрони: картка 4874 1000 3417 5680'), true);
+  assert.equal(isNoise('Дніпропетровщина: БпЛА курсом на Кривий Ріг.'), false);
+  assert.equal(isNoise('Реактивний вийшов за межі області'), false);
+
+  _resetAlerts();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t) => (sent.push([id, t]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+  const st = chat(-641);
+  st.settings.alerts = true;
+  st.alertStatus = { id: 1, active: false, at: 0 };
+  const t0 = Date.now();
+  let p = { oborona_kr: post('oborona_kr', 1, t0 - 1000, END) };
+  await alertsTick(t0, mkFetch(p));
+  p = { oborona_kr: p.oborona_kr + post('oborona_kr', 2, t0 + 500, fundraiser.replace(/\n/g, '<br/>')) };
+  await alertsTick(t0 + 11_000, mkFetch(p));
+  assert.equal(sent.filter((x) => x[0] === -641).length, 0);
+});
