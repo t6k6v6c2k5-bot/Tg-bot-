@@ -34,8 +34,11 @@ export function mentionedUsers(st, text) {
 }
 
 export async function say(chatId, st, text, replyTo, meta = {}) {
-  const { entities, ...rest } = meta;
-  const base = { reply_parameters: replyTo ? { message_id: replyTo, allow_sending_without_reply: true } : undefined };
+  const { entities, noPreview, ...rest } = meta;
+  const base = {
+    reply_parameters: replyTo ? { message_id: replyTo, allow_sending_without_reply: true } : undefined,
+    ...(noPreview ? { link_preview_options: { is_disabled: true } } : {}), // без карточки-превью ссылки
+  };
   let sent;
   try {
     // entities (text_mention) нужны, чтобы тегнуть человека без @ника: ему придёт уведомление

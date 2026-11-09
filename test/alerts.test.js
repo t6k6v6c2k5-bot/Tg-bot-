@@ -3,109 +3,106 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { post, START, END, mkFetch } from './helpers-alerts.js';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'al-'));
-process.env.ALERT_CHANNELS = 'kpszsu';
+process.env.ALERT_CHANNELS = 'kpszsu,oborona_kr';
+process.env.ALERT_AREA_CHANNELS = 'oborona_kr';
 
-const { parseChannel, fetchAlertState, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
+const { parseChannel, cleanPost, areaEvent, alertsTick, alertStatusText, isAlertQuestion, isThreatPost, similar, startText, clearText, _resetAlerts } = await import('../src/alerts.js');
 const { chat } = await import('../src/store.js');
 const { app } = await import('../src/respond.js');
 
-const post = (id, ts, text) => `<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message" data-post="kpszsu/${id}"><div class="tgme_widget_message_text js-message_text" dir="auto"><tg-emoji emoji-id="1"><i class="emoji"><b>🏍</b></i></tg-emoji> ${text}</div><a class="tgme_widget_message_date"><time datetime="${new Date(ts).toISOString()}"></time></a></div></div>`;
-let html = '';
-let alarm = false;
-let apiDown = false;
-const fakeFetch = async (url) => {
-  if (url.includes('ubilling')) {
-    if (apiDown) return { ok: false, status: 500, text: async () => '' };
-    return { ok: true, text: async () => JSON.stringify({ states: { 'Дніпропетровська область': { alertnow: alarm } } }) };
-  }
-  if (url.includes('alerts.com.ua')) return { ok: true, text: async () => JSON.stringify({ states: [{ name: 'Дніпропетровська область', alert: alarm }] }) };
-  return { ok: true, text: async () => html };
-};
-
-test('разбор публичной страницы канала', () => {
+test('разбор страницы канала, подписи каналов вырезаются', () => {
   const now = Date.now();
-  const posts = parseChannel(post(10, now, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.') + post(11, now, 'Житомирщина: БпЛА &amp; ракета'), 'kpszsu');
+  const html = post('dnipro_alerts', 7, now, 'Кривий Ріг жовтогарячий 🟧. Попередньо транзит на захід реактивного.<br/><br/>ℹ️ Alerts Live • 🤙 Зворотний зв’язок') + post('kpszsu', 8, now, '<tg-emoji emoji-id="1"><i class="emoji"><b>🏍</b></i></tg-emoji> Житомирщина: БпЛА &amp; ракета');
+  const posts = parseChannel(html, 'x');
   assert.equal(posts.length, 2);
-  assert.equal(posts[0].id, 10);
-  assert.match(posts[0].text, /^🏍 Дніпропетровщина: БпЛА курсом на Кривий Ріг\.$/);
-  assert.equal(posts[1].text.includes('&'), true);
-  assert.equal(posts[0].link, 'https://t.me/kpszsu/10');
+  assert.equal(posts[0].text, 'Кривий Ріг жовтогарячий 🟧. Попередньо транзит на захід реактивного.'); // без «Alerts Live…»
+  assert.equal(posts[0].link, 'https://t.me/dnipro_alerts/7');
+  assert.equal(posts[1].text, '🏍 Житомирщина: БпЛА & ракета');
+  assert.equal(cleanPost('Все, далі в глиб Кіровоградщини\n\nКриворіжжя локаційно чисто 📡\n\n✉️chatbot|💬𝟏𝐌𝐒_𝐊𝐑™|💬Treads'), 'Все, далі в глиб Кіровоградщини\n\nКриворіжжя локаційно чисто 📡');
 });
 
-test('состояние тревоги из API с запасным источником', async () => {
-  alarm = true;
-  assert.equal(await fetchAlertState(fakeFetch), true);
-  apiDown = true;
-  assert.equal(await fetchAlertState(fakeFetch), true); // второй источник
-  apiDown = false;
-  alarm = false;
+test('тревога именно по Криворізькому району: старт и отбой', () => {
+  assert.equal(areaEvent(START), 'start');
+  assert.equal(areaEvent(END), 'end');
+  assert.equal(areaEvent('🔴 Дніпропетровська область — повітряна тривога'), null); // вся область — не наш район
+  assert.equal(areaEvent('🔴 Нікопольський район — повітряна тривога'), null);
+  assert.equal(areaEvent('Кривий Ріг: БпЛА курсом на місто'), null);
 });
 
-test('тревога, где летит и отбой приходят в чаты с включёнными тревогами', async () => {
+test('тревога по району объявляется, область не важна; отбой тоже', async () => {
   _resetAlerts();
   const sent = [];
-  app.telegram = { sendMessage: async (id, t) => (sent.push([id, t]), { message_id: sent.length }) };
+  app.telegram = { sendMessage: async (id, t, o) => (sent.push([id, t, o]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
   app.id = 1;
   const on = chat(-600);
   on.settings.alerts = true;
   const off = chat(-601);
   const t0 = Date.now();
-  html = post(1, t0 - 1000, 'Дніпропетровщина: старый пост до запуска');
-  await alertsTick(t0, fakeFetch); // baseline: ничего не шлём
+  let pages = { oborona_kr: post('oborona_kr', 1, t0 - 3_600_000, END) };
+  await alertsTick(t0, mkFetch(pages, true)); // baseline: область в тревоге (API), но по району отбой: молчим
   assert.equal(sent.length, 0);
 
-  alarm = true;
-  html = post(1, t0 - 1000, 'старый') + post(2, t0 + 60_000, 'Житомирщина: БпЛА курсом на Овруч.') + post(3, t0 + 61_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.');
-  await alertsTick(t0 + 61_000, fakeFetch);
+  pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 5_000, START) };
+  await alertsTick(t0 + 31_000, mkFetch(pages));
   const mine = () => sent.filter((x) => x[0] === -600).map((x) => x[1]);
   assert.equal(sent.some((x) => x[0] === -601), false); // чат без тревог ничего не получает
-  assert.match(mine()[0], /ПОВІТРЯНА ТРИВОГА/);
-  assert.match(mine()[1], /Кривий Ріг/); // про Дніпропетровщину пересылаем, про Житомирщину нет
-  assert.match(mine()[1], /t\.me\/kpszsu\/3/);
-  assert.equal(mine().length, 2);
+  assert.match(mine()[0], /ПОВІТРЯНА ТРИВОГА у Кривому Розі/);
+  assert.doesNotMatch(mine()[0], /област/i);
 
-  await alertsTick(t0 + 125_000, fakeFetch); // повторно то же: тишина
-  assert.equal(mine().length, 2);
+  await alertsTick(t0 + 62_000, mkFetch(pages)); // тот же пост — тишина
+  assert.equal(mine().length, 1);
 
-  // про наш город — отдельное срочное сообщение, и лимит на него не действует
-  const on2 = chat(-600);
-  on2.alertLog = Array(10).fill(t0 + 125_000);
-  html += post(4, t0 + 126_000, 'Реактивні Шахеди з півдня на Криворіжжя! Укриття!');
-  await alertsTick(t0 + 160_000, fakeFetch);
-  assert.match(mine().at(-1), /УВАГА! Щось летить на Кривий Ріг/);
-  assert.match(mine().at(-1), /Укриття/);
-  assert.equal(mine().length, 3);
-  on2.alertLog = [];
-
-  alarm = false;
-  await alertsTick(t0 + 10 * 60_000 + 5000, fakeFetch);
-  assert.match(mine().at(-1), /ВІДБІЙ/);
-  assert.match(mine().at(-1), /9 хв/);
+  pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 3, t0 + 70_000, END) };
+  await alertsTick(t0 + 93_000, mkFetch(pages));
+  assert.match(mine().at(-1), /ВІДБІЙ повітряної тривоги у Кривому Розі/);
   assert.equal(off.settings.alerts, undefined);
 });
 
-test('статус по запросу и распознавание вопроса', async () => {
-  alarm = false;
-  html = post(5, Date.now() - 5 * 60_000, 'Дніпропетровщина: БпЛА курсом на Павлоград.');
-  const t = await alertStatusText(fakeFetch);
-  assert.match(t, /тривоги немає/);
+test('где летит: про город срочно, ссылки без превью-карточки, подписи каналов убраны', async () => {
+  _resetAlerts();
+  const sent = [];
+  app.telegram = { sendMessage: async (id, t, o) => (sent.push([id, t, o]), { message_id: sent.length }), pinChatMessage: async () => true, unpinChatMessage: async () => true, deleteMessage: async () => true };
+  const st = chat(-602);
+  st.settings.alerts = true;
+  const t0 = Date.now();
+  let pages = { kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+  await alertsTick(t0, mkFetch(pages)); // baseline
+  pages = { kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 1000, 'Житомирщина: БпЛА курсом на Овруч.') + post('kpszsu', 3, t0 + 2000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.<br/>ℹ️ Alerts Live • Зворотний зв’язок') };
+  await alertsTick(t0 + 31_000, mkFetch(pages));
+  const mine = sent.filter((x) => x[0] === -602);
+  assert.equal(mine.length, 1);
+  assert.match(mine[0][1], /УВАГА! Щось летить на Кривий Ріг/);
+  assert.doesNotMatch(mine[0][1], /Alerts Live/);
+  assert.match(mine[0][1], /Джерело: https:\/\/t\.me\/kpszsu\/3/);
+  assert.deepEqual(mine[0][2].link_preview_options, { is_disabled: true });
+});
+
+test('статус: по городу, а не по области', async () => {
+  const t0 = Date.now();
+  let pages = { oborona_kr: post('oborona_kr', 5, t0 - 60_000, START), kpszsu: post('kpszsu', 9, t0 - 5 * 60_000, 'Дніпропетровщина: БпЛА курсом на Павлоград.') };
+  let t = await alertStatusText(mkFetch(pages, false)); // область говорит «нет», район — тревога
+  assert.match(t, /У Кривому Розі зараз ПОВІТРЯНА ТРИВОГА/);
+  assert.doesNotMatch(t, /Дніпропетровськ/);
   assert.match(t, /Павлоград/);
+  pages = { oborona_kr: post('oborona_kr', 6, t0 - 60_000, END) };
+  t = await alertStatusText(mkFetch(pages, true));
+  assert.match(t, /У Кривому Розі зараз тривоги немає/);
+  t = await alertStatusText(mkFetch({}, true)); // по городу данных нет: честно говорим
+  assert.match(t, /По Кривому Розі даних зараз немає/);
+});
+
+test('распознавание вопроса и фильтры', () => {
   assert.ok(isAlertQuestion('батя, есть тревога?'));
   assert.ok(isAlertQuestion('где летит?'));
   assert.ok(isAlertQuestion('шо там по відбою?'));
   assert.ok(!isAlertQuestion('ты ракета?'));
-  assert.match(startText(), /Дніпропетровській області/);
-  assert.match(clearText(95), /1 год 35 хв/);
-});
-
-test('«чисто» и «відбій» не тревожат, угроза — да; дубли из разных каналов пропускаются', () => {
   assert.equal(isThreatPost('Криворіжжя локаційно чисто 📡'), false);
-  assert.equal(isThreatPost('Реактивний вийшов за межі області'), false);
-  assert.equal(isThreatPost('Дніпропетровщина: енергетикам вдалося стабілізувати ситуацію'), false);
-  assert.equal(isThreatPost('Кривий Ріг жовтогарячий. Попередньо транзит на захід реактивного північною частиною міста.'), true);
   assert.equal(isThreatPost('БпЛА курсом на Кривий Ріг'), true);
   assert.equal(similar('Дніпропетровщина: БпЛА курсом на Кривий Ріг', 'БпЛА курсом на Кривий Ріг із заходу'), true);
   assert.equal(similar('БпЛА курсом на Кривий Ріг', 'Реактивний від Солоного на захід'), false);
+  assert.match(startText(), /у Кривому Розі/);
+  assert.match(clearText(95), /1 год 35 хв/);
 });
