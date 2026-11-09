@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { allChats, save } from './store.js';
 import { app, say } from './respond.js';
 import { botOff } from './owner.js';
+import { alertsOn } from './botmode.js';
 
 // Тревоги: состояние по области из открытых API (без ключа) и «где летит» из публичных каналов (по умолчанию официальный канал Повітряних Сил).
 // Только цитаты из источников, ничего не додумываем. Тревога не знает тихих часов.
@@ -155,7 +156,7 @@ export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
 }
 
 // ---------- рассылка ----------
-const subscribed = () => allChats().filter(([id, st]) => id < 0 && st.settings?.alerts === true && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
+const subscribed = () => allChats().filter(([id, st]) => id < 0 && alertsOn(st) && !(st.kickedAt && (st.history.at(-1)?.ts ?? 0) < st.kickedAt));
 const regionGen = () => config.alertRegion.replace(/ька область$/, 'ькій області').replace(/область$/, 'області');
 
 const PIN_CLEAR_MS = 15 * 60_000; // отбой держим закреплённым ещё 15 минут и снимаем

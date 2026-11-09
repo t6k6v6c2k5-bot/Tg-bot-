@@ -10,7 +10,7 @@ import { refreshRoster } from './roster.js';
 import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
 import { renameNote } from './rename.js';
-import { botMode, hardcore } from './botmode.js';
+import { botMode, hardcore, lightOnly } from './botmode.js';
 import { parseMyQueue, setUserGroup, loadData } from './outage.js';
 import { isTimeQuestion, timeAnswer } from './clock.js';
 import { isAlertQuestion, alertStatusText } from './alerts.js';
@@ -61,7 +61,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
   const direct = isPrivate || isDirect({ text: detect, botUsername: app.username, aliases: config.aliases, replyToBot });
 
   // Обучение «блокнота» через ИИ: каждые ~12 сообщений, повтор через 5 минут, если модели были недоступны
-  if (!isPrivate && bm !== 'light') {
+  if (!isPrivate && !lightOnly(st)) {
     st.sinceLearn++;
     if (st.sinceLearn >= 12 && now - st.lastLearnAt > 5 * 60_000) {
       st.lastLearnAt = now;
@@ -111,7 +111,7 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
     }
     // вопросы про свет обычными словами: считаем по графику очередей, а не шутим
     // режим «только свет»: на всё, кроме графиков и времени, молчим
-    if (bm === 'light' && !(mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now) || isTimeQuestion(detect) || isAlertQuestion(detect)))) {
+    if (lightOnly(st) && !(mode === 'direct' && (isLightQuestion(detect) || isQueueFollowUp(st, msg.from.id, detect, now) || isTimeQuestion(detect) || isAlertQuestion(detect)))) {
       console.log('[mode] только свет: не про свет, молчу');
       return;
     }

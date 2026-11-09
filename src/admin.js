@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { botMode, setBotMode, MODES, NEXT } from './botmode.js';
+import { botMode, setBotMode, MODES, NEXT, alertsOn } from './botmode.js';
 import { isAdminId, hasAdmins, bindAdmin, ownerSerious, setOwnerSerious, botOff, setBotOff, selfTalk, setSelfTalk, _resetOwner } from './owner.js';
 import { allChats, chat, save, dayKey } from './store.js';
 import { app, say } from './respond.js';
@@ -68,7 +68,7 @@ export function chatInfo(id, st, now = Date.now()) {
     memMemes: (st.memory?.memes || []).length,
     mode: botMode(st),
     hardcore: st.settings.hardcore === true,
-    alerts: st.settings.alerts === true,
+    alerts: alertsOn(st),
     now,
   };
 }
@@ -259,6 +259,7 @@ export async function onAction(ctx) {
         return await showCard(ctx, id);
       }
       case 'al':
+        if (botMode(st) === 'lightalert') return ack('В режиме «свет и тревога» тревоги включены всегда', true);
         st.settings.alerts = !st.settings.alerts;
         save();
         await ack(st.settings.alerts ? 'Тревоги включены' : 'Тревоги выключены');

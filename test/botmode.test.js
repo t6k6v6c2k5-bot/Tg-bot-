@@ -23,6 +23,10 @@ test('режим по умолчанию смешанный, цикл перек
   assert.equal(parseMode('только свет'), 'light');
   assert.equal(parseMode('смешанный'), 'mixed');
   assert.equal(parseMode('без света'), 'nolight');
+  assert.equal(parseMode('свет и тревога'), 'lightalert');
+  assert.equal(parseMode('тревога'), 'lightalert');
+  assert.equal(NEXT.light, 'lightalert');
+  assert.equal(NEXT.lightalert, 'mixed');
   assert.equal(parseMode('абракадабра'), null);
   setBotMode(st, 'light');
   assert.equal(botMode(st), 'light');
@@ -81,4 +85,24 @@ test('/режим меняет только админ бота', async () => {
   await handleCommand(ctxFor(-304, { id: 777 }), parseCommand('/режим свет'), { ...msg('/режим свет', { id: 777 }), message_id: 9 });
   assert.equal(botMode(st), 'light');
   assert.match(sent.at(-1), /только свет/);
+});
+
+test('режим «свет и тревога»: болтовни нет, тревоги включены сами, выключить их нельзя', async () => {
+  const { lightOnly, alertsOn } = await import('../src/botmode.js');
+  const sent = setup();
+  const st = chat(-305);
+  assert.equal(alertsOn(st), false);
+  await handleCommand(ctxFor(-305, { id: 777 }), parseCommand('/режим свет и тревога'), { ...msg('/режим свет и тревога', { id: 777 }), message_id: 9 });
+  assert.equal(botMode(st), 'lightalert');
+  assert.equal(lightOnly(st), true);
+  assert.equal(alertsOn(st), true);
+  assert.equal(st.settings.alerts === true, false); // флаг не трогали: тревоги идут от режима
+  await handleCommand(ctxFor(-305, { id: 777 }), parseCommand('/тревога выкл'), { ...msg('/тревога выкл', { id: 777 }), message_id: 9 });
+  assert.equal(alertsOn(st), true);
+  assert.match(sent.at(-1), /выключить нельзя/);
+  // болтовня игнорируется
+  sent.length = 0;
+  st.history.push({ id: 1, uid: 5, name: 'Влад', text: 'Батя, расскажи анекдот', ts: Date.now() });
+  await processMessage(ctxFor(-305, { id: 5, first_name: 'Влад' }), st, msg('Батя, расскажи анекдот', { id: 5, first_name: 'Влад' }), { text: 'Батя, расскажи анекдот' });
+  assert.equal(sent.length, 0);
 });

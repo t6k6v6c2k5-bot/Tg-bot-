@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { botOff, selfTalk } from './owner.js';
 import { outageTick } from './outage.js';
-import { botMode, hardcore, effActivity } from './botmode.js';
+import { botMode, hardcore, effActivity, lightOnly } from './botmode.js';
 import { allChats, dayKey, hourOf, save } from './store.js';
 import { sendDigest } from './commands.js';
 import { LEVELS, canSpeakUnsolicited } from './filter.js';
@@ -26,12 +26,12 @@ async function tick() {
       // Память не зависит от настроения бота: даже в режиме тишины доучиваем непрочитанное,
       // если чат затих и ИИ снова доступен
       const idle = now - (st.history.at(-1)?.ts ?? 0);
-      if (botMode(st) !== 'light' && learnBacklog(st) >= 10 && now - st.lastLearnAt > 5 * 60_000 && idle > 2 * 60_000) {
+      if (!lightOnly(st) && learnBacklog(st) >= 10 && now - st.lastLearnAt > 5 * 60_000 && idle > 2 * 60_000) {
         st.lastLearnAt = now;
         await learn(chatId, st);
         save();
       }
-      if (!(selfTalk() || hardcore(st)) || botMode(st) === 'light') continue; // сам не пишет: ни итогов, ни оживлений
+      if (!(selfTalk() || hardcore(st)) || lightOnly(st)) continue; // сам не пишет: ни итогов, ни оживлений
       if (st.settings.mutedUntil > now) continue;
 
       // Итоги дня — раз в сутки

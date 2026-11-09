@@ -13,7 +13,7 @@ import { dossier, statsText, detectTargets } from './analysis.js';
 import { runCatchup, hoursFromText } from './catchup.js';
 import { outageCommand, outageAll } from './outage.js';
 import { alertStatusText } from './alerts.js';
-import { botMode, setBotMode, parseMode, MODES } from './botmode.js';
+import { botMode, setBotMode, parseMode, MODES, lightOnly } from './botmode.js';
 import { isAdminId } from './owner.js';
 
 export const parseCommand = (text) => {
@@ -87,7 +87,7 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /оживи — вопрос или опрос для тихого чата
 /свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/тревога — есть ли тревога в области и последнее «где летит»; /тревога вкл|выкл — сообщения о тревоге и отбое в чате (только админ бота)
 /хардкор [вкл|выкл] — агрессивный режим: злой, нападает первым (только админ бота)
-/режим свет|смешанный|без света — режим бота в чате (только админ бота)
+/режим свет | свет и тревога | смешанный | без света — режим бота в чате (только админ бота)
 /график — график света по всем очередям сейчас (можно и словом «График» без слэша; «графики» тоже работает)`;
 
 // true — сообщение было командой (нашей или чужой), дальше его разбирать не нужно
@@ -97,7 +97,7 @@ export async function handleCommand(ctx, cmd, message) {
   if (!key) return false;
   const bm = botMode(chat(ctx.chat.id));
   if (bm === 'nolight' && (key === 'outage' || key === 'graphs')) return true; // в этом чате света нет
-  if (bm === 'light' && !['help', 'outage', 'graphs', 'mode', 'hardcore', 'alert'].includes(key)) return true; // «только свет»
+  if (lightOnly(chat(ctx.chat.id)) && !['help', 'outage', 'graphs', 'mode', 'hardcore', 'alert'].includes(key)) return true; // «только свет»
   await exec(ctx, key, cmd, message);
   return true;
 }
@@ -113,10 +113,10 @@ async function exec(ctx, key, cmd, message) {
     case 'mode': {
       if (!isAdminId(from.id)) return void (await reply(`Режим чата: ${MODES[botMode(st)]}. Менять может только админ бота.`));
       const m = parseMode(cmd.args);
-      if (!m) return void (await reply(`Режим сейчас: ${MODES[botMode(st)]}. Поставить: /режим свет | смешанный | без света`));
+      if (!m) return void (await reply(`Режим сейчас: ${MODES[botMode(st)]}. Поставить: /режим свет | свет и тревога | смешанный | без света`));
       setBotMode(st, m);
       save();
-      await reply({ light: 'Теперь только свет: графики, прогноз и расчёты, без шуток.', mixed: 'Смешанный режим: свет плюс обычный Батя.', nolight: 'Без света: обычный Батя, графики в этом чате отключены.' }[m]);
+      await reply({ light: 'Теперь только свет: графики, прогноз и расчёты, без шуток.', lightalert: '💡🚨 Свет и тревога: графики, прогноз, расчёты и сообщения о тревоге, отбое и «где летит». Без шуток и болтовни.', mixed: 'Смешанный режим: свет плюс обычный Батя.', nolight: 'Без света: обычный Батя, графики в этом чате отключены.' }[m]);
       break;
     }
     case 'alert': {
@@ -124,6 +124,7 @@ async function exec(ctx, key, cmd, message) {
       if (/^(?:вкл|on|выкл|off|вимкн|включ)/.test(arg)) {
         if (!isAdminId(from.id)) return void (await reply('Включать и выключать тревоги может только админ бота.'));
         const on = /^(?:вкл|on|включ)/.test(arg);
+        if (!on && botMode(st) === 'lightalert') return void (await reply('В режиме «свет и тревога» тревоги выключить нельзя. Поменяй режим: /режим смешанный'));
         st.settings.alerts = on;
         save();
         return void (await reply(on ? '🚨 Тревоги включены: буду писать о тревоге, отбое и «где летит» по области из открытых источников.' : 'Тревоги в этом чате выключены.'));
