@@ -68,6 +68,16 @@ test('тревога, где летит и отбой приходят в чат
   await alertsTick(t0 + 125_000, fakeFetch); // повторно то же: тишина
   assert.equal(mine().length, 2);
 
+  // про наш город — отдельное срочное сообщение, и лимит на него не действует
+  const on2 = chat(-600);
+  on2.alertLog = Array(10).fill(t0 + 125_000);
+  html += post(4, t0 + 126_000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг. Укриття!');
+  await alertsTick(t0 + 160_000, fakeFetch);
+  assert.match(mine().at(-1), /УВАГА! Щось летить на Кривий Ріг/);
+  assert.match(mine().at(-1), /Укриття/);
+  assert.equal(mine().length, 3);
+  on2.alertLog = [];
+
   alarm = false;
   await alertsTick(t0 + 10 * 60_000 + 5000, fakeFetch);
   assert.match(mine().at(-1), /ВІДБІЙ/);

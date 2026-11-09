@@ -85,6 +85,8 @@ export const config = {
   alertRegion: env.ALERT_REGION || 'Дніпропетровська область',
   alertChannels: (env.ALERT_CHANNELS || 'kpszsu').split(/[\s,;]+/).filter(Boolean),
   alertKeywords: (env.ALERT_KEYWORDS || 'Дніпропетров,Дніпро,Кривий Ріг,Кривого Рогу,Кривому Розі,Криворіж,Нікопол,Павлоград,Кам\'янськ,Марганец,Марганець,Жовті Води,Тернів').split(/\s*,\s*/).filter(Boolean),
+  // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов
+  alertPriority: (env.ALERT_PRIORITY || 'Кривий Ріг,Кривого Рогу,Кривому Розі,Кривим Рогом,Криворіж,Кривой Рог,Кривого Рога').split(/\s*,\s*/).filter(Boolean),
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ
   outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
   outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра

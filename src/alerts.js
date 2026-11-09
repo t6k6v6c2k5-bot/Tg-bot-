@@ -14,7 +14,7 @@ const STATE_URLS = {
   alertscom: 'https://alerts.com.ua/api/states',
 };
 const FRESH_MS = 20 * 60_000; // старые посты после простоя не пересылаем
-const CHANNEL_EVERY_MS = 60_000;
+const CHANNEL_EVERY_MS = 30_000;
 const HOURLY_CAP = 10; // не больше N сообщений «где летит» в час на чат
 const H = 3600_000;
 
@@ -93,7 +93,9 @@ export function parseChannel(html, channel) {
   return out.sort((a, b) => a.id - b.id);
 }
 
-const keywordRe = () => new RegExp(config.alertKeywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+const escRe = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const priorityRe = () => new RegExp(config.alertPriority.map(escRe).join('|'), 'i');
+const keywordRe = () => new RegExp([...config.alertKeywords, ...config.alertPriority].map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
 
 /** Новые посты, касающиеся нашей области: baseline при первом запуске (старое не шлём) */
 export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
@@ -107,7 +109,7 @@ export async function fetchFlightPosts(now = Date.now(), fetchFn = fetch) {
       const last = S.posts[ch];
       S.posts[ch] = Math.max(...posts.map((p) => p.id), last || 0);
       if (last == null) continue; // первый запуск: запомнили, что уже было
-      for (const p of posts) if (p.id > last && now - p.ts < FRESH_MS && re.test(p.text)) found.push({ ...p, channel: ch });
+      for (const p of posts) if (p.id > last && now - p.ts < FRESH_MS && re.test(p.text)) found.push({ ...p, channel: ch, priority: priorityRe().test(p.text) });
     } catch (e) {
       console.warn(`[alerts] канал ${ch}:`, e.message);
     }
@@ -133,6 +135,8 @@ async function broadcast(text) {
     }
   }
 }
+
+const cityName = () => (config.alertPriority[0] || 'наше місто');
 
 export const startText = () => `🚨 ПОВІТРЯНА ТРИВОГА у ${regionGen()}!\nНегайно в укриття, не стійте біля вікон. Слухайте сирени та офіційні канали.`;
 export const clearText = (mins) => `✅ ВІДБІЙ повітряної тривоги у ${regionGen()}.${mins >= 1 ? ` Тривога тривала ${mins >= 90 ? `${Math.floor(mins / 60)} год ${mins % 60} хв` : `${mins} хв`}.` : ''}`;
@@ -160,10 +164,12 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
     for (const p of await fetchFlightPosts(now, fetchFn)) {
       for (const [chatId, st] of subscribed()) {
         st.alertLog = (st.alertLog || []).filter((t) => now - t < H);
-        if (st.alertLog.length >= HOURLY_CAP) continue;
-        st.alertLog.push(now);
+        if (!p.priority) {
+          if (st.alertLog.length >= HOURLY_CAP) continue; // обычные сообщения по области ограничены, про наш город шлём всегда
+          st.alertLog.push(now);
+        }
         try {
-          await say(chatId, st, `🛩 ${p.text}\n\nДжерело: ${p.link}`);
+          await say(chatId, st, p.priority ? `🚨🚨 УВАГА! Щось летить на ${cityName()}!\n\n${p.text}\n\nДжерело: ${p.link}` : `🛩 ${p.text}\n\nДжерело: ${p.link}`);
         } catch (e) {
           console.error('[alerts]', chatId, e.message);
         }
@@ -185,7 +191,8 @@ export async function alertStatusText(fetchFn = fetch, now = Date.now()) {
   try {
     const re = keywordRe();
     const posts = (await Promise.all(config.alertChannels.map(async (ch) => parseChannel(await getText(`https://t.me/s/${ch}`, fetchFn), ch)))).flat();
-    const last = posts.filter((p) => re.test(p.text) && now - p.ts < 3 * H).sort((a, b) => b.ts - a.ts)[0];
+    const recent = posts.filter((p) => re.test(p.text) && now - p.ts < 3 * H).sort((a, b) => b.ts - a.ts);
+    const last = recent.find((p) => priorityRe().test(p.text)) || recent[0];
     if (last) tail = `\n\n🛩 Останнє по області (${Math.max(1, Math.round((now - last.ts) / 60_000))} хв тому):\n${last.text}\n${last.link}`;
   } catch (e) {
     console.warn('[alerts] статус:', e.message);
