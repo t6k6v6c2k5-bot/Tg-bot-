@@ -1,3 +1,5 @@
+import { OUR_PLACES } from './geo.js';
+
 const env = process.env;
 // Ключи Gemini из разных аккаунтов: GEMINI_API_KEY (можно списком через запятую), GEMINI_API_KEYS,
 // а также GEMINI_API_KEY_2 … GEMINI_API_KEY_9
@@ -92,7 +94,7 @@ export const config = {
   // местные каналы Кривого Рога: «терміново в укриття», «коридор», «ховайтесь» там значит, что угроза над городом, даже без названия города
   alertLocal: (env.ALERT_LOCAL_CHANNELS || 'oborona_kr,IMS_KR_TM,typical_KR').split(/[\s,;]+/).filter(Boolean).map((s) => s.toLowerCase()),
   // главное: всё, где упомянут твой город, идёт отдельным срочным сообщением без лимитов
-  alertPriority: (env.ALERT_PRIORITY || 'Кривий Ріг,Кривого Рогу,Кривому Розі,Кривим Рогом,Криворіж,Криворізьк,Кривой Рог,Кривого Рога').split(/\s*,\s*/).filter(Boolean),
+  alertPriority: (env.ALERT_PRIORITY ? env.ALERT_PRIORITY.split(/\s*,\s*/).filter(Boolean) : OUR_PLACES), // всё, что считается «нашими краями» (см. src/geo.js)
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ
   outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
   outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра

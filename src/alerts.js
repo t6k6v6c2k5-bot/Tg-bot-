@@ -13,7 +13,7 @@ import { alertsOn } from './botmode.js';
 const FILE = () => path.join(config.dataDir, 'alerts.json');
 const STATE_URLS = { ubilling: 'https://ubilling.net.ua/aerialalerts/', alertscom: 'https://alerts.com.ua/api/states' };
 const FRESH_MS = 20 * 60_000; // старые посты после простоя не пересылаем
-const CHANNEL_EVERY_MS = 30_000;
+const CHANNEL_EVERY_MS = 10_000; // когда летит ракета, счёт идёт на секунды
 const HOURLY_CAP = 10; // не больше N сообщений «где летит» в час на чат
 const H = 3600_000;
 
@@ -52,7 +52,7 @@ export const _resetAlerts = () => {
 };
 
 async function getText(url, fetchFn) {
-  const res = await fetchFn(url, { signal: AbortSignal.timeout(12_000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; batya-bot)' } });
+  const res = await fetchFn(url, { signal: AbortSignal.timeout(6_000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; batya-bot)' } });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   return res.text();
 }
@@ -152,10 +152,15 @@ export function isDirectThreat(text) {
 }
 
 // Ракеты — срочно в укрытие; БпЛА/дроны — без паники, просто что и куда летит.
-const MISSILE = /ракет|балістик|крилат|кинджал|калібр|іскандер|(?<![а-яa-z])х-\d|(?<![а-яa-z])кх-\d|циркон|онікс/i;
+// Быстрые угрозы (секунды до цели): ракеты, «бандероль», КАБы — всё срочно. «Транзит/повз» без красного уровня — не срочно.
+const BANDEROL = /бандерол/i;
+const KAB = /(?<![а-яіїєґa-z])каб(?:и|ів|ом|ами|ам|ах|у|ові)?(?![а-яіїєґa-z])|авіабомб|керован\p{L}*\s+бомб/iu;
+const MISSILE = new RegExp(`ракет|балістик|крилат|кинджал|калібр|іскандер|(?<![а-яa-z])х-\\d|(?<![а-яa-z])кх-\\d|циркон|онікс|${BANDEROL.source}|${KAB.source}`, 'iu');
 const OBLAST = /дніпропетровщин|дніпропетровськ/i;
 /** Ракетная угроза нашему городу или области в целом (а не соседнему городу) */
-export const isMissileThreat = (text, local = false) => MISSILE.test(text) && !CLEAR.test(text) && (priorityRe().test(text) || OBLAST.test(text) || local);
+export const isMissileThreat = (text, local = false) => MISSILE.test(text) && !CLEAR.test(text) && !(TRANSIT.test(text) && !RED.test(text)) && (priorityRe().test(text) || OBLAST.test(text) || local);
+/** Заголовок быстрой угрозы по типу */
+export const fastTitle = (text) => (KAB.test(text) ? '💣 КАБ' : BANDEROL.test(text) ? '🚀 БАНДЕРОЛЬ' : '🚀 РАКЕТНА ЗАГРОЗА');
 
 const clip = (t, n) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
 /** Причина тревоги: самый свежий пост об угрозе по городу/области за последние 30 минут */
@@ -182,16 +187,22 @@ export function similar(a, b) {
   return inter / (x.size + y.size - inter) >= 0.45;
 }
 
-/** Страницы всех нужных каналов: { канал: [посты] } */
+const backoff = {}; // канал -> до какого времени не трогаем (после 429)
+/** Страницы всех нужных каналов параллельно: { канал: [посты] } */
 async function fetchPages(fetchFn) {
   const pages = {};
-  for (const ch of new Set([...config.alertChannels, ...config.alertAreaChannels])) {
-    try {
-      pages[ch] = parseChannel(await getText(`https://t.me/s/${ch}`, fetchFn), ch);
-    } catch (e) {
-      console.warn(`[alerts] канал ${ch}:`, e.message);
-    }
-  }
+  const now = Date.now();
+  await Promise.all(
+    [...new Set([...config.alertChannels, ...config.alertAreaChannels])].map(async (ch) => {
+      if ((backoff[ch] || 0) > now) return;
+      try {
+        pages[ch] = parseChannel(await getText(`https://t.me/s/${ch}?_=${now}`, fetchFn), ch); // ?_= обходит кэш
+      } catch (e) {
+        if (/HTTP 429/.test(e.message)) backoff[ch] = now + 60_000; // нас притормозили: минуту не трогаем канал
+        console.warn(`[alerts] канал ${ch}:`, e.message);
+      }
+    }),
+  );
   return pages;
 }
 
@@ -280,7 +291,7 @@ export const idleText = () => card([{ bold: '🟢 ТРИВОГИ НЕМАЄ' }, 
 
 /** Сообщение «где летит» одним из видов: ракеты, срочно, обновление, обычное */
 export function flightCard(p) {
-  const head = p.missile ? [{ bold: '🚀 РАКЕТНА ЗАГРОЗА' }, place(), { bold: '‼️ Терміново в укриття!' }] : p.urgent ? [{ bold: '🚨 УВАГА' }, place()] : p.update ? [{ bold: 'ℹ️ ОНОВЛЕННЯ' }] : [{ bold: '🛩 РУХ ПОБЛИЗУ' }];
+  const head = p.missile ? [{ bold: fastTitle(p.text) }, place(), { bold: '‼️ Терміново в укриття!' }] : p.urgent ? [{ bold: '🚨 УВАГА' }, place()] : p.update ? [{ bold: 'ℹ️ ОНОВЛЕННЯ' }] : [{ bold: '🛩 РУХ ПОБЛИЗУ' }];
   return card([...head, { quote: p.text }, sourceLine(p)]);
 }
 
@@ -441,7 +452,14 @@ export async function alertsTick(now = Date.now(), fetchFn = fetch) {
 }
 
 export function startAlerts() {
-  setInterval(() => alertsTick().catch((e) => console.error('[alerts]', e.message)), 30_000);
+  let busy = false;
+  setInterval(() => {
+    if (busy) return; // предыдущая проверка ещё идёт
+    busy = true;
+    alertsTick()
+      .catch((e) => console.error('[alerts]', e.message))
+      .finally(() => (busy = false));
+  }, 5_000);
 }
 
 /** Карточка для /тревога и вопроса «есть тревога?»: состояние по городу + последний пост про него */

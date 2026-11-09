@@ -9,5 +9,5 @@ export const END = '🟢 Криворізький район — відбій п
 export const mkFetch = (pages, apiAlarm = false) => async (url) => {
   if (url.includes('ubilling')) return { ok: true, text: async () => JSON.stringify({ states: { 'Дніпропетровська область': { alertnow: apiAlarm } } }) };
   if (url.includes('alerts.com.ua')) return { ok: false, status: 500, text: async () => '' };
-  return { ok: true, text: async () => pages[url.split('/s/')[1]] || '' };
+  return { ok: true, text: async () => pages[url.split('/s/')[1].split('?')[0]] || '' };
 };
