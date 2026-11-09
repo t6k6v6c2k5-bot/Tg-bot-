@@ -201,6 +201,8 @@ const label = () => config.alertAreaLabel;
 
 // Устаревшие сообщения убираем быстро: обычное «летит» живёт 20 минут, обновление «ℹ️» 10, срочное и ракеты 40.
 // Закреплённый статус (kind 'start') без срока: его заменяет следующий статус.
+// Сообщения бота про тревогу по началу текста (для «зачистки всего» при отбое)
+const ALERT_MARK = /^(?:🚨|🛩|ℹ️|🚀|📡|✅ ВІДБІЙ|🟢 ТРИВОГИ|⚠️ СТАН)/u;
 const TTL_MIN = { flight: 20, update: 10, urgent: 40 };
 
 const track = (st, sent, kind, ttlMin = 0) => (st.alertMsgs ||= []).push({ id: sent.message_id, at: Date.now(), kind, until: ttlMin ? Date.now() + ttlMin * 60_000 : 0 });
@@ -295,6 +297,10 @@ async function postStatus(chatId, st, active, { mins = 0, now = Date.now(), init
   st.alertPin = null;
   const ids = new Set((st.alertMsgs || []).map((m) => m.id));
   if (!active && old?.id) ids.add(old.id); // отбой вытесняет и тревогу, и все «летит…»
+  if (!active) {
+    // Главное правило: при отбое удаляется ВСЁ, что бот писал про тревогу, независимо от срока жизни — и то, что не попало в список (старый формат, потеря при перезапуске)
+    for (const m of st.history) if (m.bot && now - m.ts < 36 * H && ALERT_MARK.test(m.text)) ids.add(m.id);
+  }
   if (active && old && !old.active) ids.add(old.id); // новая тревога убирает старый отбой
   st.alertMsgs = [];
   await wipe(chatId, st, [...ids]);

@@ -149,3 +149,36 @@ test('устаревшие «летит» убираются по сроку ж�
   assert.deepEqual(log.filter((x) => x[0] === 'del').map((x) => x[1]), [drone]);
   assert.equal(st.alertStatus.id, status); // закреплённая тревога остаётся
 });
+
+test('отбой удаляет ВСЁ про тревогу независимо от срока жизни, даже то, чего нет в списке', async () => {
+  for (const id of [-700, -701, -702, -703]) chat(id).settings.alerts = false;
+  _resetAlerts();
+  const log = [];
+  let n = 600;
+  app.telegram = {
+    sendMessage: async (id, t) => (id === -704 && log.push(['send', n + 1, t]), { message_id: ++n }),
+    pinChatMessage: async () => true,
+    unpinChatMessage: async () => true,
+    deleteMessage: async (id, mid) => id === -704 && log.push(['del', mid]),
+  };
+  app.id = 1;
+  const st = chat(-704);
+  st.settings.alerts = true;
+  const t0 = Date.now();
+  let pages = { oborona_kr: post('oborona_kr', 1, t0 - 1000, END), kpszsu: post('kpszsu', 1, t0 - 1000, 'старый') };
+  await alertsTick(t0, mkFetch(pages));
+  // «Старое» сообщение про тревогу, которого нет в списке (например, из прошлой версии), и обычная болтовня бота
+  st.history.push({ id: 11, uid: 1, bot: true, name: 'Батя', text: 'ℹ️ Реактивний вийшов за межі області\n\nДжерело: https://t.me/x/1', ts: t0 - 3600_000 });
+  st.history.push({ id: 12, uid: 1, bot: true, name: 'Батя', text: 'Шутка про батарейки', ts: t0 - 3600_000 });
+  pages = { oborona_kr: pages.oborona_kr + post('oborona_kr', 2, t0 + 1000, START), kpszsu: pages.kpszsu + post('kpszsu', 2, t0 + 2000, 'Дніпропетровщина: БпЛА курсом на Кривий Ріг.') };
+  await alertsTick(t0 + 31_000, mkFetch(pages));
+  const sends = log.filter((x) => x[0] === 'send');
+  const ids = sends.slice(1).map((x) => x[1]); // статус тревоги + «БпЛА»: сроки жизни ещё не вышли (первое — «тревоги нет», его убрала сама тревога)
+  pages = { ...pages, oborona_kr: pages.oborona_kr + post('oborona_kr', 3, t0 + 2 * 60_000, END) };
+  log.length = 0;
+  await alertsTick(t0 + 3 * 60_000, mkFetch(pages)); // отбой через 3 минуты: до сроков далеко
+  const dels = log.filter((x) => x[0] === 'del').map((x) => x[1]);
+  for (const id of [...ids, 11]) assert.ok(dels.includes(id), `удалено ${id}`);
+  assert.equal(dels.includes(12), false); // обычные сообщения бота не трогаем
+  assert.match(log.find((x) => x[0] === 'send')[2], /ВІДБІЙ/);
+});
