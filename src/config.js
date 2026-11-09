@@ -48,6 +48,8 @@ export const config = {
   // Groq (не путать с Grok от xAI): быстрый запасной мозг и Whisper для голосовых
   extraProviders,
   // Claude (Anthropic API): быстрый и без суточных квот Gemini; ключ только в переменной окружения, не в коде
+  // CLAUDE_ONLY=1: тексты пишет только Claude (Gemini остаётся лишь для распознавания фото, Groq — для голосовых)
+  claudeOnly: env.CLAUDE_ONLY === '1',
   anthropicKeys: keyList(env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEYS),
   anthropicModel: env.ANTHROPIC_MODEL || 'claude-haiku-5-5', // болтовня
   anthropicSmartModel: env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-5-5', // объяснения и аналитика

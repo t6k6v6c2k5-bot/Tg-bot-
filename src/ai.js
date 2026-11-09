@@ -204,7 +204,7 @@ export async function generate({ system, prompt, maxTokens = 120, temperature = 
     console.log('[ai] общий лимит запросов в минуту, молчим');
     return null;
   }
-  const names = (prefer === 'edgy' ? ['anthropic', 'grok', 'groq', ...extraNames(), 'gemini'] : ['anthropic', 'gemini', 'groq', ...extraNames(), 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia));
+  const names = (prefer === 'edgy' ? ['anthropic', 'grok', 'groq', ...extraNames(), 'gemini'] : ['anthropic', 'gemini', 'groq', ...extraNames(), 'grok']).filter((n) => providers[n].enabled() && (!media || providers[n].supportsMedia) && !(config.claudeOnly && !media && n !== 'anthropic'));
   const offset = rr++;
   const seen = new Set();
   const candidates = names
@@ -255,12 +255,14 @@ export function aiStatus(now = Date.now()) {
     .map(([id, until]) => ({ id, seconds: Math.ceil((until - now) / 1000), fails: fails[id] || 0 }))
     .sort((a, b) => b.seconds - a.seconds);
   while (calls.length && now - calls[0] > 60_000) calls.shift();
+  const only = config.claudeOnly;
   return {
+    claudeOnly: only,
     anthropic: { keys: config.anthropicKeys.length, models: [...new Set([config.anthropicSmartModel, config.anthropicModel])] },
-    gemini: { keys: config.geminiKeys.length, models: [...new Set([...config.geminiSmartModels, ...config.geminiModels])] },
-    groq: { keys: config.groqKeys.length, models: config.groqModels },
-    extra: config.extraProviders.map((c) => ({ name: c.name, keys: c.keys.length, models: c.models })),
-    grok: { enabled: Boolean(config.grokKey) },
+    gemini: { keys: only ? 0 : config.geminiKeys.length, models: [...new Set([...config.geminiSmartModels, ...config.geminiModels])] },
+    groq: { keys: only ? 0 : config.groqKeys.length, models: config.groqModels },
+    extra: only ? [] : config.extraProviders.map((c) => ({ name: c.name, keys: c.keys.length, models: c.models })),
+    grok: { enabled: !only && Boolean(config.grokKey) },
     callsLastMinute: calls.length,
     pauses,
   };
