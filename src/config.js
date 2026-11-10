@@ -52,7 +52,7 @@ export const config = {
   // SMART_DIRECT=1: на прямые обращения к Бате отвечает «умная» модель (ANTHROPIC_SMART_MODEL), фон и самовольные реплики — быстрая
   smartDirect: env.SMART_DIRECT === '1',
   claudeOnly: env.CLAUDE_ONLY === '1',
-  anthropicKeys: keyList(env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEYS),
+  anthropicKeys: env.ANTHROPIC_ENABLED === '0' ? [] : keyList(env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEYS), // ANTHROPIC_ENABLED=0 — Claude выключен, ключ остаётся в переменных
   anthropicModel: env.ANTHROPIC_MODEL || 'claude-haiku-5-5', // болтовня
   anthropicSmartModel: env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-5-5', // объяснения и аналитика
   groqKeys,
