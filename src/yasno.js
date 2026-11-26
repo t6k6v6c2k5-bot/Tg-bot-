@@ -42,6 +42,10 @@ export function yasnoToData(json, tz = config.outageTz) {
       (days[ts] ||= {})[`GPV${queue}`] = slotsToHours(day.slots);
     }
   }
+  // диагностика: какие очереди и в каком статусе пришли (статусы: ScheduleApplies, WaitingForSchedule, EmergencyShutdowns …)
+  const st = {};
+  for (const [q, v] of Object.entries(json || {})) if (v && typeof v === 'object') st[q] = `${v.today?.status || '-'}/${v.tomorrow?.status || '-'}`;
+  console.log('[yasno] очереди:', JSON.stringify(st));
   if (!Object.keys(days).length) throw new Error('Yasno: нет действующих графиков');
   return { source: 'yasno', fact: { update: fmtUpdated(updatedOn, tz), data: days } };
 }
