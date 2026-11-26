@@ -72,8 +72,9 @@ export function parseGroup(input, known = null) {
   if (!m) return null;
   const g = `GPV${Number(m[1])}.${m[2]}`;
   if (known?.includes(g)) return g;
-  const now = config.outageLegacy[g]; // старое название очереди → новое (6.2 → 12.1)
-  if (now && (!known || known.includes(now))) return now;
+  const now = config.outageLegacy[g]; // старое название очереди → новое (6.2 → 12.1); если подходит несколько, берём первую из данных
+  const pick = now && (!known ? now[0] : now.find((x) => known.includes(x)));
+  if (pick) return pick;
   return !known ? g : null;
 }
 
@@ -86,7 +87,13 @@ export function legacyNote(text, known = null) {
     if (now && !known?.includes(old) && !out.some((x) => x.old === old)) out.push({ old, now });
   }
   if (!out.length) return '';
-  return out.map(({ old, now }) => `ℹ️ Очередь ${shortName(old)} теперь называется ${shortName(now)}: ДТЕК перешёл на новую схему очередей (1.1–18.1), ${shortName(now)} — это бывшая ${shortName(old)}.`).join('\n');
+  return out
+    .map(({ old, now }) =>
+      now.length > 1
+        ? `ℹ️ Очередь ${shortName(old)} теперь ${now.map(shortName).join(' или ')}: ДТЕК перешёл на новую схему очередей (1.1–18.1). Сейчас у них один и тот же график, считаю по ${shortName(now[0])}. Какая именно твоя — смотри по адресу на dtek-dnem.com.ua/ua/shutdowns.`
+        : `ℹ️ Очередь ${shortName(old)} теперь называется ${shortName(now[0])}: ДТЕК перешёл на новую схему очередей (1.1–18.1), ${shortName(now[0])} — это бывшая ${shortName(old)}.`,
+    )
+    .join('\n');
 }
 
 export const shortName = (g) => g.replace(/^GPV/, '');

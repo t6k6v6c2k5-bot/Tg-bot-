@@ -6,6 +6,7 @@ import path from 'node:path';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'out-'));
 process.env.OUTAGE_HOUR = '7';
+process.env.OUTAGE_LEGACY = ''; // тесты на старых названиях очередей, без переименований
 process.env.QUIET_FROM = '0';
 process.env.QUIET_TO = '6';
 process.env.BOT_TZ = 'UTC';
