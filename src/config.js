@@ -109,6 +109,7 @@ export const config = {
   outageSource: env.OUTAGE_SOURCE || 'auto',
   yasnoRegion: num('YASNO_REGION', 3), // Дніпро
   yasnoDso: num('YASNO_DSO', 301), // ДнЕМ (ДТЕК Дніпровські електромережі), обслуживает и Кривой Рог
+  dtekCity: env.DTEK_CITY || 'м. Кривий Ріг', // город для поиска очереди по адресу
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ
   outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
   outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра

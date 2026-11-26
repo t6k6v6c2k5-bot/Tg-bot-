@@ -11,7 +11,8 @@ import { lifeStatus } from './life.js';
 import { CRUDE_LEVELS, crudeLevel } from './prompts.js';
 import { dossier, statsText, detectTargets } from './analysis.js';
 import { runCatchup, hoursFromText } from './catchup.js';
-import { outageCommand, outageAll } from './outage.js';
+import { outageCommand, outageAll, shortName } from './outage.js';
+import { lookupGroup, DtekBlocked } from './dtek.js';
 import { alertStatusText } from './alerts.js';
 import { botMode, setBotMode, parseMode, MODES, lightOnly } from './botmode.js';
 import { isAdminId } from './owner.js';
@@ -39,6 +40,7 @@ const ALIAS = {
   забудь: 'forget', forget: 'forget', забудь_всё: 'forgetall', забудьвсё: 'forgetall', forgetall: 'forgetall',
   тревога: 'alert', тривога: 'alert', alert: 'alert',
   режим: 'mode', mode: 'mode', хардкор: 'hardcore', hardcore: 'hardcore',
+  адрес: 'addr', адреса: 'addr', адреса_дому: 'addr', addr: 'addr', моя_очередь: 'addr',
   свет: 'outage', світло: 'outage', график: 'graphs', графік: 'graphs', графики: 'graphs', графіки: 'graphs', graphs: 'graphs', light: 'outage', outage: 'outage',
   табу: 'taboo', taboo: 'taboo', табу_список: 'taboo', табу_сброс: 'tabooreset',
 };
@@ -60,6 +62,7 @@ export const BOT_COMMANDS = [
   { command: 'life', description: 'Самостоятельность бота вкл/выкл' },
   { command: 'memory', description: 'Что бот помнит обо мне' },
   { command: 'light', description: 'Свет: /свет 3.1 запомнит твою очередь' },
+  { command: 'addr', description: 'Найти очередь по адресу: /адрес Соборності 5' },
   { command: 'graphs', description: 'График света по всем очередям' },
   { command: 'mode', description: 'Режим: свет / смешанный / без света (админ)' },
   { command: 'hardcore', description: 'Хардкор: агрессивный режим (админ)' },
@@ -85,7 +88,7 @@ const HELP = `Я молчу, пока не позовут, и лишь изре�
 /статистика — кто сколько писал, когда пик, кто молчит
 /итоги — итоги дня сейчас (сами приходят вечером)
 /оживи — вопрос или опрос для тихого чата
-/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь\n/тревога — есть ли тревога в области и последнее «где летит»; /тревога вкл|выкл — сообщения о тревоге и отбое в чате (только админ бота)
+/свет 3.1 — запомнить твою очередь света и показать график (дальше сам кидаю утром и когда он меняется; можно и фразой «моя очередь 3.1»); /свет — мой график; /свет картинка — картинкой; /свет стоп — забыть мою очередь; /адрес Соборності 5 — найти твою очередь по адресу на сайте ДТЕК\n/тревога — есть ли тревога в области и последнее «где летит»; /тревога вкл|выкл — сообщения о тревоге и отбое в чате (только админ бота)
 /хардкор [вкл|выкл] — агрессивный режим: злой, нападает первым (только админ бота)
 /режим свет | свет и тревога | смешанный | без света — режим бота в чате (только админ бота)
 /график — график света по всем очередям сейчас (можно и словом «График» без слэша; «графики» тоже работает)`;
@@ -149,6 +152,23 @@ async function exec(ctx, key, cmd, message) {
     case 'graphs':
       await outageAll(chatId, st, message.message_id);
       break;
+    case 'addr': {
+      if (!cmd.args) return void (await reply('Напиши адрес: /адрес вул. Соборності 5. Я найду твою очередь на сайте ДТЕК, запомню её и буду присылать график.'));
+      let r;
+      try {
+        r = await lookupGroup(cmd.args);
+      } catch (e) {
+        console.warn('[dtek]', e.message);
+        return void (await reply(e instanceof DtekBlocked ? 'Сайт ДТЕК сейчас не пускает бота, адрес не проверить. Узнай очередь на dtek-dnem.com.ua/ua/shutdowns и напиши: /свет 7.1' : 'Не получилось проверить адрес, попробуй позже.'));
+      }
+      if (r.status === 'nostreet') return void (await reply(`В городе ${config.dtekCity} такой улицы не нашёл. Напиши, например: /адрес Соборності 5`));
+      if (r.status === 'choose') return void (await reply(r.needHouse ? `Нашёл улицу ${r.streets[0]}. Добавь номер дома: /адрес ${r.streets[0]} 5` : `Уточни улицу: ${r.streets.join('; ')}. Например: /адрес ${r.streets[0]} 5`));
+      if (r.status === 'nohouse') return void (await reply(`На ${r.street} такого дома нет в базе ДТЕК. Есть: ${r.houses.join(', ')}.`));
+      if (!r.groups.length) return void (await reply(`${r.street}, ${r.house}: очередь не указана (дом может быть вне графиков). Проверь на dtek-dnem.com.ua/ua/shutdowns`));
+      await reply(`📍 ${r.street}, ${r.house}: ${r.groups.length > 1 ? 'очереди' : 'очередь'} ${r.groups.map(shortName).join(', ')}`);
+      await outageCommand(chatId, st, shortName(r.groups[0]), message.message_id, from);
+      break;
+    }
     case 'outage':
       await outageCommand(chatId, st, cmd.args, message.message_id, from);
       break;
