@@ -58,3 +58,17 @@ test('loadData берёт Yasno, а при сбое — репозиторий',
   assert.deepEqual(listGroups(d2), ['GPV3.1']);
   await assert.rejects(fetchYasno(blocked), /HTTP 403/);
 });
+
+test('старая очередь 6.2 = новая 12.1: разбор и пояснение', async () => {
+  const { parseGroup, legacyNote, parseMyQueue } = await import('../src/outage.js');
+  const known = ['GPV1.1', 'GPV12.1'];
+  assert.equal(parseGroup('6.2', known), 'GPV12.1');
+  assert.equal(parseGroup('6.2'), 'GPV12.1');
+  assert.equal(parseGroup('12.1', known), 'GPV12.1');
+  assert.equal(parseGroup('5.2', known), null);
+  assert.equal(parseMyQueue('моя очередь 6.2'), 'GPV12.1');
+  assert.match(legacyNote('где график 6.2?'), /6\.2 теперь называется 12\.1/);
+  assert.equal(legacyNote('график 12.1'), '');
+  // если 6.2 снова появится в данных, она остаётся собой
+  assert.equal(parseGroup('6.2', ['GPV6.2', 'GPV12.1']), 'GPV6.2');
+});

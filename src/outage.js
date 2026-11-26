@@ -71,7 +71,22 @@ export function parseGroup(input, known = null) {
   const m = String(input || '').match(/(?:gpv|гпв|черг\p{L}*|очеред\p{L}*)?\s*(\d{1,2})\s*[.,\-_\s]\s*(\d)(?!\d)/iu);
   if (!m) return null;
   const g = `GPV${Number(m[1])}.${m[2]}`;
-  return !known || known.includes(g) ? g : null;
+  if (known?.includes(g)) return g;
+  const now = config.outageLegacy[g]; // старое название очереди → новое (6.2 → 12.1)
+  if (now && (!known || known.includes(now))) return now;
+  return !known ? g : null;
+}
+
+/** Если в тексте названа старая очередь (6.2), пояснение, как она называется теперь */
+export function legacyNote(text, known = null) {
+  const out = [];
+  for (const m of String(text || '').matchAll(/(?<!\d)(\d{1,2})\s*[.,\-]\s*(\d)(?!\d)/gu)) {
+    const old = `GPV${Number(m[1])}.${m[2]}`;
+    const now = config.outageLegacy[old];
+    if (now && !known?.includes(old) && !out.some((x) => x.old === old)) out.push({ old, now });
+  }
+  if (!out.length) return '';
+  return out.map(({ old, now }) => `ℹ️ Очередь ${shortName(old)} теперь называется ${shortName(now)}: ДТЕК перешёл на новую схему очередей (1.1–18.1), ${shortName(now)} — это бывшая ${shortName(old)}.`).join('\n');
 }
 
 export const shortName = (g) => g.replace(/^GPV/, '');
@@ -327,7 +342,7 @@ export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = f
   }
   const msg = buildSummary(data, { [g]: [{ uid: from.id, name: from.first_name || from.username || 'друг', username: from.username }] }, {
     title: `💡 Черга ${shortName(g)}`,
-    subtitle: [statusLine(data, g), mine === g || !parseGroup(text) ? '' : "Запам'ятав твою чергу: кидатиму вранці, ввечері і коли графік зміниться."].filter(Boolean).join('\n'),
+    subtitle: [legacyNote(text, known), statusLine(data, g), mine === g || !parseGroup(text) ? '' : "Запам'ятав твою чергу: кидатиму вранці, ввечері і коли графік зміниться."].filter(Boolean).join('\n'),
     only: [g],
     markPast: true,
   });

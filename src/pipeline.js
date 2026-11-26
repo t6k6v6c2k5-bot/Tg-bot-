@@ -11,7 +11,7 @@ import { isCatchupRequest, hoursFromText, runCatchup } from './catchup.js';
 import { botOff, selfTalk } from './owner.js';
 import { renameNote } from './rename.js';
 import { botMode, hardcore, lightOnly } from './botmode.js';
-import { parseMyQueue, setUserGroup, loadData } from './outage.js';
+import { parseMyQueue, setUserGroup, loadData, legacyNote, listGroups } from './outage.js';
 import { isTimeQuestion, timeAnswer } from './clock.js';
 import { isAlertQuestion, alertStatusText } from './alerts.js';
 import { isLightQuestion, isQueueFollowUp, handleLightQuestion } from './outage-ask.js';
@@ -54,6 +54,11 @@ export async function processMessage(ctx, st, msg, { text, detect = text, record
     setUserGroup(st, msg.from, myQueue, d);
     save();
     console.log(`[outage] ${msg.from.first_name || msg.from.id}: очередь ${myQueue}`);
+    const note = legacyNote(detect, d ? listGroups(d) : null);
+    if (note) {
+      await say(chatId, st, note, isPrivate ? undefined : msg.message_id);
+      return;
+    }
     if (await react(chatId, msg.message_id, '👌')) return;
   }
   if (record) return;

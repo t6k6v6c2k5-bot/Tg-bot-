@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { generate } from './ai.js';
 import { say } from './respond.js';
-import { loadData, listGroups, parseGroup, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow, timeline, statusNow } from './outage.js';
+import { loadData, listGroups, parseGroup, legacyNote, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow, timeline, statusNow } from './outage.js';
 
 export { timeline, statusNow };
 
@@ -172,6 +172,8 @@ export async function handleLightQuestion({ chatId, st, from, text, replyTo, now
     await reply(`Не знаю, какая очередь. Назови номер (например 3.1) или запиши свою: «моя очередь 3.1». Есть: ${known.map(shortName).join(', ')}.`);
     return true;
   }
+  const note = legacyNote(text, known);
+  if (note) await reply(note);
   const ownerName = !mentioned && mine ? '' : Object.values(st.outage?.users || {}).filter((u) => u.group === g).map((u) => u.name).join(', ');
   console.log(`[outage-ask] ${parsed.intent} очередь ${g}${parsed.start ? ` ${parsed.start}–${parsed.end}` : ''}`);
 
