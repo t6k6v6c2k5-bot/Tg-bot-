@@ -105,6 +105,10 @@ export const config = {
   alertPriority: (env.ALERT_PRIORITY ? env.ALERT_PRIORITY.split(/\s*,\s*/).filter(Boolean) : OUR_PLACES), // всё, что считается «нашими краями» (см. src/geo.js)
   // Писать только про быстрые угрозы (КАБ, бандероль, ракеты); БпЛА, обновления и «гучно» не пересылать. ALERT_FAST_ONLY=0 вернёт всё
   alertFastOnly: env.ALERT_FAST_ONLY !== '0',
+  // источник графиков: auto — Yasno, при сбое репозиторий Baskerville42; yasno — только Yasno; repo — только репозиторий
+  outageSource: env.OUTAGE_SOURCE || 'auto',
+  yasnoRegion: num('YASNO_REGION', 3), // Дніпро
+  yasnoDso: num('YASNO_DSO', 301), // ДнЕМ (ДТЕК Дніпровські електромережі), обслуживает и Кривой Рог
   outageTz: env.OUTAGE_TZ || 'Europe/Kyiv', // график публикуется по киевскому времени, не зависит от BOT_TZ
   outageHour: num('OUTAGE_HOUR', 7), // утренняя сводка (по BOT_TZ)
   outageEveningHour: num('OUTAGE_EVENING_HOUR', 20), // вечерняя сводка на завтра

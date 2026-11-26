@@ -4,6 +4,7 @@ import { allChats, save } from './store.js';
 import { app, say } from './respond.js';
 import { botOff } from './owner.js';
 import { botMode } from './botmode.js';
+import { fetchYasno } from './yasno.js';
 
 // Графики отключений света из https://github.com/Baskerville42/outage-data-ua
 // data/<регион>.json — данные по очередям (GPV3.1 …), images/<регион>/gpv-3-1.png — готовая картинка.
@@ -30,10 +31,26 @@ async function getBuffer(url, fetchFn) {
   return Buffer.from(await res.arrayBuffer());
 }
 
+let lastSource = null;
 export async function loadData(fetchFn = fetch, now = Date.now()) {
   if (cache.data && now - cache.at < CACHE_MS) return cache.data;
-  const buf = await getBuffer(`${RAW()}/data/${config.outageRegion}.json`, fetchFn);
-  cache = { at: now, data: JSON.parse(buf.toString('utf8')) };
+  let data = null;
+  if (config.outageSource !== 'repo') {
+    try {
+      data = await fetchYasno(fetchFn);
+    } catch (e) {
+      console.warn('[outage] Yasno недоступен:', e.message);
+      if (config.outageSource === 'yasno') throw e;
+    }
+  }
+  if (!data) {
+    const buf = await getBuffer(`${RAW()}/data/${config.outageRegion}.json`, fetchFn);
+    data = JSON.parse(buf.toString('utf8'));
+  }
+  const src = data.source || 'repo';
+  if (src !== lastSource) console.log(`[outage] источник графиков: ${src}`);
+  lastSource = src;
+  cache = { at: now, data };
   return cache.data;
 }
 
@@ -301,7 +318,7 @@ export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = f
   }
   if (!wantImage || parseGroup(text)) setUserGroup(st, from, g, data);
   save();
-  if (wantImage) {
+  if (wantImage && data.source !== 'yasno') { // готовые картинки есть только у репозитория; у Yasno рисуем текстом
     try {
       return void (await sendImage(chatId, g, data, fetchFn));
     } catch (e) {
