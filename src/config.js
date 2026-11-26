@@ -112,7 +112,7 @@ export const config = {
   dtekCity: env.DTEK_CITY || 'м. Кривий Ріг', // город для поиска очереди по адресу
   // старые названия очередей → новые (ДТЕК перешёл на схему 1.1–18.1): «6.2=12.1», несколько через запятую; пусто — без переименований
   outageLegacy: Object.fromEntries(
-    (env.OUTAGE_LEGACY ?? '6.2=12.1')
+    (env.OUTAGE_LEGACY ?? '6.2=12.1,2.2=4.1')
       .split(/[,;]/)
       .map((x) => x.split('=').map((y) => y.trim()))
       .filter(([a, b]) => /^\d{1,2}\.\d$/.test(a) && /^\d{1,2}\.\d$/.test(b))

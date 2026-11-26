@@ -72,3 +72,9 @@ test('старая очередь 6.2 = новая 12.1: разбор и поя�
   // если 6.2 снова появится в данных, она остаётся собой
   assert.equal(parseGroup('6.2', ['GPV6.2', 'GPV12.1']), 'GPV6.2');
 });
+
+test('старая очередь 2.2 = новая 4.1', async () => {
+  const { parseGroup, legacyNote } = await import('../src/outage.js');
+  assert.equal(parseGroup('2.2', ['GPV4.1']), 'GPV4.1');
+  assert.match(legacyNote('где график 2.2'), /2\.2 теперь называется 4\.1/);
+});
