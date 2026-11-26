@@ -99,8 +99,8 @@ export async function handleCommand(ctx, cmd, message) {
   const key = ALIAS[cmd.name];
   if (!key) return false;
   const bm = botMode(chat(ctx.chat.id));
-  if (bm === 'nolight' && (key === 'outage' || key === 'graphs')) return true; // в этом чате света нет
-  if (lightOnly(chat(ctx.chat.id)) && !['help', 'outage', 'graphs', 'mode', 'hardcore', 'alert'].includes(key)) return true; // «только свет»
+  if (bm === 'nolight' && (key === 'outage' || key === 'graphs' || key === 'addr')) return true; // в этом чате света нет
+  if (lightOnly(chat(ctx.chat.id)) && !['help', 'outage', 'graphs', 'addr', 'mode', 'hardcore', 'alert'].includes(key)) return true; // «только свет»
   await exec(ctx, key, cmd, message);
   return true;
 }
