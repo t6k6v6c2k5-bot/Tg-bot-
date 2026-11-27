@@ -79,10 +79,15 @@ test('старая очередь 2.2 = новая 4.1', async () => {
   assert.match(legacyNote('где график 2.2'), /2\.2 теперь называется 4\.1/);
 });
 
-test('бывшая 4.2 = 7.1 или 8.1 (графики совпадают)', async () => {
+test('таблица «было → стало» из канала ЭКРД', async () => {
   const { parseGroup, legacyNote } = await import('../src/outage.js');
-  assert.equal(parseGroup('4.2', ['GPV7.1', 'GPV8.1']), 'GPV7.1');
-  assert.equal(parseGroup('4.2', ['GPV8.1']), 'GPV8.1');
-  assert.equal(parseGroup('4.2'), 'GPV7.1');
-  assert.match(legacyNote('график 4.2'), /4\.2 теперь 7\.1 или 8\.1/);
+  const all = Array.from({ length: 18 }, (_, i) => `GPV${i + 1}.1`);
+  const table = { '1.2': '2.1', '2.2': '4.1', '3.2': '6.1', '4.2': '8.1', '5.2': '10.1', '6.2': '12.1' };
+  for (const [old, now] of Object.entries(table)) assert.equal(parseGroup(old, all), `GPV${now}`, old);
+  assert.match(legacyNote('график 4.2', all), /4\.2 теперь называется 8\.1/);
+  // имя, которое осталось в данных, могло быть и старым, и новым: показываем новое и подсказываем перевод
+  assert.equal(parseGroup('3.1', all), 'GPV3.1');
+  assert.match(legacyNote('график 3.1', all), /Это новая 3\.1\. Если ты имел в виду старую 3\.1, то теперь она 5\.1/);
+  assert.equal(legacyNote('график 1.1', all), ''); // 1.1 не менялась
+  assert.equal(legacyNote('график 12.1', all), '');
 });

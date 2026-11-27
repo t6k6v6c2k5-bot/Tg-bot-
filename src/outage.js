@@ -78,20 +78,22 @@ export function parseGroup(input, known = null) {
   return !known ? g : null;
 }
 
-/** Если в тексте названа старая очередь (6.2), пояснение, как она называется теперь */
+/** Если в тексте названа очередь, у которой изменилось название: пояснение. Старое имя, которого уже нет в данных (6.2) — переводим; имя, которое осталось (3.1), могло быть и старым, и новым — даём оба прочтения. */
 export function legacyNote(text, known = null) {
   const out = [];
   for (const m of String(text || '').matchAll(/(?<!\d)(\d{1,2})\s*[.,\-]\s*(\d)(?!\d)/gu)) {
     const old = `GPV${Number(m[1])}.${m[2]}`;
     const now = config.outageLegacy[old];
-    if (now && !known?.includes(old) && !out.some((x) => x.old === old)) out.push({ old, now });
+    if (now && !out.some((x) => x.old === old)) out.push({ old, now, still: Boolean(known?.includes(old)) });
   }
   if (!out.length) return '';
   return out
-    .map(({ old, now }) =>
-      now.length > 1
-        ? `ℹ️ Очередь ${shortName(old)} теперь ${now.map(shortName).join(' или ')}: ДТЕК перешёл на новую схему очередей (1.1–18.1). Сейчас у них один и тот же график, считаю по ${shortName(now[0])}. Какая именно твоя — смотри по адресу на dtek-dnem.com.ua/ua/shutdowns.`
-        : `ℹ️ Очередь ${shortName(old)} теперь называется ${shortName(now[0])}: ДТЕК перешёл на новую схему очередей (1.1–18.1), ${shortName(now[0])} — это бывшая ${shortName(old)}.`,
+    .map(({ old, now, still }) =>
+      still
+        ? `ℹ️ Нумерация очередей поменялась 26.11. Это новая ${shortName(old)}. Если ты имел в виду старую ${shortName(old)}, то теперь она ${now.map(shortName).join(' или ')}.`
+        : now.length > 1
+          ? `ℹ️ Очередь ${shortName(old)} теперь ${now.map(shortName).join(' или ')}: ДТЕК перешёл на новую схему очередей (1.1–18.1). Сейчас у них один и тот же график, считаю по ${shortName(now[0])}. Какая именно твоя — смотри по адресу на dtek-dnem.com.ua/ua/shutdowns.`
+          : `ℹ️ Очередь ${shortName(old)} теперь называется ${shortName(now[0])}: ДТЕК перешёл на новую схему очередей (1.1–18.1), ${shortName(now[0])} — это бывшая ${shortName(old)}.`,
     )
     .join('\n');
 }

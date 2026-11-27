@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+process.env.OUTAGE_LEGACY = ''; // тесты на старых названиях очередей
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ask-'));
 process.env.BOT_TZ = 'UTC';
 process.env.OUTAGE_TZ = 'UTC';
