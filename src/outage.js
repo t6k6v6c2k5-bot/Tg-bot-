@@ -281,6 +281,27 @@ const sub = (st) => {
   return o;
 };
 
+/**
+ * Люди, у которых записана очередь с прежним названием, которого уже нет в данных (4.2), переезжают на новую (8.1).
+ * Имена, которые остались (3.1), не трогаем: неизвестно, старая это 3.1 или новая.
+ * @returns {{uid:string, name:string, username?:string, from:string, to:string}[]}
+ */
+export function migrateUsers(o, known) {
+  const moved = [];
+  for (const [uid, u] of Object.entries(o.users || {})) {
+    const now = config.outageLegacy[u.group];
+    const to = now && !known.includes(u.group) ? now.find((x) => known.includes(x)) : null;
+    if (!to) continue;
+    moved.push({ uid, name: u.name, username: u.username, from: u.group, to });
+    u.group = to;
+    if (o.hashes) delete o.hashes[to]; // график новой очереди ещё не отправляли этому человеку
+  }
+  return moved;
+}
+
+export const movedText = (moved) =>
+  `ℹ️ Нумерация очередей поменялась (ДТЕК, схема 1.1–18.1). Перенёс очереди: ${moved.map((m) => `${m.name} ${shortName(m.from)} → ${shortName(m.to)}`).join(', ')}. Если у кого очередь была 2.1, 3.1, 4.1, 5.1 или 6.1 по старой нумерации, напишите «моя очередь N» заново: старая 2.1 → 3.1, 3.1 → 5.1, 4.1 → 7.1, 5.1 → 9.1, 6.1 → 11.1.`;
+
 /** Люди чата по очередям: { 'GPV3.1': [{uid, name, username}] } */
 export function peopleByGroup(o) {
   const by = {};
@@ -326,6 +347,11 @@ export async function outageCommand(chatId, st, args, replyTo, from, fetchFn = f
     return void (await reply('Не дотягуюсь до графіків, спробуй трохи пізніше.'));
   }
   const known = listGroups(data);
+  const moved = migrateUsers(o, known);
+  if (moved.length) {
+    save();
+    if (moved.some((m) => m.uid === String(from.id))) await reply(movedText(moved.filter((m) => m.uid === String(from.id))));
+  }
   const mine = o.users[from.id]?.group;
   const text = (args || '').trim();
   if (/^(?:стоп|stop|off|выкл|вимкн|отпис|забудь|видал)/iu.test(text)) {
@@ -404,6 +430,11 @@ export async function outageTick(now = Date.now(), fetchFn = fetch) {
     if (o.lastSummary && now - o.lastSummary.at > 24 * 3600_000) await dropSummary(chatId, st, o);
     try {
       if (isQuiet(hour)) continue;
+      const moved = migrateUsers(o, all);
+      if (moved.length) {
+        save();
+        await say(chatId, st, movedText(moved));
+      }
       if (!o.announced) {
         o.announced = true;
         save();

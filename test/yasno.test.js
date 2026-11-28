@@ -91,3 +91,16 @@ test('таблица «было → стало» из канала ЭКРД', as
   assert.equal(legacyNote('график 1.1', all), ''); // 1.1 не менялась
   assert.equal(legacyNote('график 12.1', all), '');
 });
+
+test('записанная очередь 4.2 переезжает на 8.1, а 3.1 остаётся', async () => {
+  const { migrateUsers, movedText } = await import('../src/outage.js');
+  const known = Array.from({ length: 18 }, (_, i) => `GPV${i + 1}.1`);
+  const o = { users: { 1: { group: 'GPV4.2', name: 'Дарина' }, 2: { group: 'GPV3.1', name: 'Оля' }, 3: { group: 'GPV12.1', name: 'Влад' } }, hashes: { 'GPV8.1': 'x' } };
+  const moved = migrateUsers(o, known);
+  assert.deepEqual(moved.map((m) => [m.name, m.from, m.to]), [['Дарина', 'GPV4.2', 'GPV8.1']]);
+  assert.equal(o.users[1].group, 'GPV8.1');
+  assert.equal(o.users[2].group, 'GPV3.1');
+  assert.equal(o.hashes['GPV8.1'], undefined);
+  assert.match(movedText(moved), /Дарина 4\.2 → 8\.1/);
+  assert.deepEqual(migrateUsers(o, known), []); // повторно ничего не делает
+});

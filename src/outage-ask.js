@@ -1,7 +1,8 @@
 import { config } from './config.js';
 import { generate } from './ai.js';
 import { say } from './respond.js';
-import { loadData, listGroups, parseGroup, legacyNote, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow, timeline, statusNow } from './outage.js';
+import { save } from './store.js';
+import { loadData, listGroups, parseGroup, legacyNote, migrateUsers, offIntervals, daysOf, shortName, buildSummary, hhmm, minutesNow, timeline, statusNow } from './outage.js';
 
 export { timeline, statusNow };
 
@@ -157,6 +158,7 @@ export async function handleLightQuestion({ chatId, st, from, text, replyTo, now
     return true;
   }
   const known = listGroups(data);
+  if (st.outage?.users && migrateUsers(st.outage, known).length) save();
   const parsed = (await extract(text, now).catch(() => null)) || ruleExtract(text);
   const mine = st.outage?.users?.[from.id]?.group;
   const mentioned = parseGroup(text, known) || (parsed.queue ? parseGroup(String(parsed.queue), known) : null);
